@@ -1021,7 +1021,7 @@ function renderMap(){
       className:'', iconSize:[30,30], iconAnchor:[15,15], popupAnchor:[0,-15]
     });
     const marker = L.marker([p.lat, p.lon], {icon}).addTo(pinLayer);
-    const costTxt = p.cost !== null && p.cost !== undefined ? (p.cost==0?'Gratis':money(p.cost)) : '';
+    const costTxt = p.cost !== null && p.cost !== undefined ? (p.cost==0?'Gratis':money(p.cost)+' /persona') : '';
     marker.bindPopup(`
       <div class="popup-title">${cat.emoji} ${esc(p.name)}</div>
       <div class="popup-meta">${esc(dayLabel(p.day))} · ${costTxt} ${p.schedule?(' · '+esc(p.schedule)):''}</div>
