@@ -177,8 +177,31 @@ nav.tabbar{
   padding:6px 16px calc(16px + var(--tabbar-space));
   overscroll-behavior-y:contain;
 }
-.day-page-zone{font-size:12px; font-weight:700; color:var(--ink-soft); margin:2px 2px 12px;}
+.day-page-head{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  margin:2px 2px 12px; flex-wrap:wrap;
+}
+.day-page-zone{font-size:12px; font-weight:700; color:var(--ink-soft);}
+.day-walk{font-size:11.5px; font-weight:800; color:var(--ink); background:var(--paper);
+  padding:5px 11px; border-radius:999px; white-space:nowrap;}
+.day-walk:empty{display:none;}
 .poi-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;}
+
+/* tramo entre dos lugares */
+.leg{
+  display:flex; align-items:center; gap:8px; padding-left:30px;
+  margin:-4px 0; min-height:26px;
+}
+.leg-rail{width:0; height:22px; border-left:2px dashed #D6CFC2; flex-shrink:0;}
+.leg-pill{font-size:11px; font-weight:700; color:var(--ink-soft); white-space:nowrap;}
+.leg.is-transit .leg-pill{color:var(--blue);}
+.leg-go{
+  font-size:10.5px; font-weight:800; color:var(--blue); text-decoration:none;
+  background:rgba(59,85,232,.08); padding:3px 9px; border-radius:999px; white-space:nowrap;
+  transition:background .2s ease, transform .15s ease;
+}
+.leg-go:hover{background:rgba(59,85,232,.16);}
+.leg-go:active{transform:scale(.94);}
 
 .poi-card{
   position:relative;
@@ -281,7 +304,17 @@ nav.tabbar{
 }
 .filter-chip:active{transform:scale(.94);}
 .filter-chip.active{background:var(--ink); color:#fff;}
+#route-summary{
+  display:flex; align-items:center; gap:8px; padding:0 16px 10px; background:var(--bg); flex-wrap:wrap;
+}
+#route-summary:empty{display:none;}
+.route-chip{
+  font-size:11.5px; font-weight:800; color:#fff; background:var(--ink);
+  padding:6px 12px; border-radius:999px;
+}
+.route-note{font-size:10.5px; font-weight:700; color:var(--ink-soft);}
 .pin{
+  position:relative;
   width:30px;height:30px;border-radius:50%; display:flex;align-items:center;justify-content:center; font-size:14px;
   border:2.5px solid #fff; box-shadow:0 2px 8px rgba(23,20,22,.28);
   animation:pinDrop .34s cubic-bezier(.34,1.56,.64,1) backwards;
@@ -289,6 +322,13 @@ nav.tabbar{
 }
 .pin:hover{transform:scale(1.18);}
 @keyframes pinDrop{from{opacity:0; transform:translateY(-12px) scale(.5);} to{opacity:1; transform:none;}}
+.pin-num{
+  position:absolute; top:-7px; right:-7px;
+  min-width:17px; height:17px; padding:0 4px; border-radius:999px;
+  background:var(--ink); color:#fff; font-size:10px; font-weight:800;
+  display:flex; align-items:center; justify-content:center;
+  border:2px solid #fff; box-shadow:0 1px 3px rgba(23,20,22,.3);
+}
 .pin.done{opacity:.4;}
 .leaflet-popup-content-wrapper{background:var(--paper); color:var(--ink); border-radius:16px; box-shadow:0 12px 30px rgba(23,20,22,.2);}
 .leaflet-popup-tip{background:var(--paper);}
@@ -457,6 +497,7 @@ nav.tabbar{
         <button class="filter-chip" data-kind="tour">🗼 Turismo</button>
         <button class="filter-chip" data-kind="food">🍽️ Comida</button>
       </div>
+      <div id="route-summary"></div>
       <div id="leaflet-map"></div>
     </section>
 
@@ -595,7 +636,7 @@ let ACTIVITY = [];
 let CURRENT_USER = localStorage.getItem('ny_trip_user') || null;
 let activeDayFilter = 'all';
 let activeKindFilter = 'all';
-let map, miniMap, miniMarker = null, pinLayer;
+let map, miniMap, miniMarker = null, pinLayer, routeLayer = null;
 const markerById = {};
 
 function esc(s){
@@ -612,6 +653,40 @@ function mapsUrl(p){
     ? `${p.lat},${p.lon}`
     : encodeURIComponent(`${p.name}, New York`);
   return `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=transit`;
+}
+
+/* ---------------- rutas y tiempos ----------------
+   Los tiempos son ESTIMADOS y se calculan en el dispositivo: distancia en línea
+   recta corregida por un factor de rejilla (Manhattan no se camina en diagonal)
+   y una velocidad a pie de ~4.8 km/h. Se evitó a propósito una API de rutas
+   externa: la pública gratuita ignora el perfil peatonal y es un servidor demo
+   sin garantías. Para el dato real está el enlace a Google Maps de cada tramo. */
+const GRID_FACTOR = 1.28;      // calles en rejilla, no diagonal
+const WALK_M_PER_MIN = 80;     // ~4.8 km/h
+const SUBWAY_THRESHOLD_M = 1500;
+
+function haversine(lat1, lon1, lat2, lon2){
+  const R = 6371000, rad = Math.PI/180;
+  const dLat = (lat2-lat1)*rad, dLon = (lon2-lon1)*rad;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function legBetween(a, b){
+  if (a.lat == null || a.lon == null || b.lat == null || b.lon == null) return null;
+  const dist = haversine(a.lat, a.lon, b.lat, b.lon) * GRID_FACTOR;
+  return {
+    dist,
+    mins: Math.max(1, Math.round(dist / WALK_M_PER_MIN)),
+    transit: dist > SUBWAY_THRESHOLD_M,
+  };
+}
+
+function fmtDist(m){ return m >= 1000 ? (m/1000).toFixed(1).replace('.',',') + ' km' : Math.round(m/10)*10 + ' m'; }
+
+function legMapsUrl(a, b, mode){
+  return `https://www.google.com/maps/dir/?api=1&origin=${a.lat},${a.lon}`
+       + `&destination=${b.lat},${b.lon}&travelmode=${mode}`;
 }
 
 function dayLabel(day){
@@ -767,7 +842,10 @@ function renderDays(){
     const items = g[day];
     const zones = [...new Set(items.map(p=>p.zone).filter(z=>z && z!=='—'))].slice(0,3).join(' · ');
     return `<div class="day-page" data-day="${day}">
-      ${zones ? `<div class="day-page-zone">📍 ${esc(zones)}</div>` : ''}
+      <div class="day-page-head">
+        ${zones ? `<span class="day-page-zone">📍 ${esc(zones)}</span>` : ''}
+        <span class="day-walk" data-day="${day}"></span>
+      </div>
       <ul class="poi-list" data-day="${day}">${items.map((p,i)=>poiCardHtml(p,i)).join('')}</ul>
     </div>`;
   }).join('');
@@ -791,6 +869,7 @@ function renderDays(){
   pager.querySelectorAll('.t-sched').forEach(i=>i.addEventListener('change', ()=>updateField(i.dataset.id, 'transport_schedule', i.value||null)));
   pager.querySelectorAll('.poi-list').forEach(list => {
     list.querySelectorAll('.poi-card').forEach(card => makeDraggable(card, list));
+    refreshLegs(list);
   });
 
   updateDayTitle();
@@ -843,6 +922,40 @@ document.getElementById('day-next').addEventListener('click', () => {
   if (idx >= 0 && idx < daysCache.length-1) scrollToDay(daysCache[idx+1], true);
 });
 
+// Dibuja los tramos entre tarjetas consecutivas. Se recalcula tras reordenar,
+// por eso vive aparte del render de las tarjetas.
+function refreshLegs(listEl){
+  listEl.querySelectorAll('.leg').forEach(el => el.remove());
+  const cards = [...listEl.querySelectorAll('.poi-card')];
+  let totalM = 0, totalMin = 0;
+
+  cards.forEach((card, i) => {
+    if (i === cards.length - 1) return;
+    const a = POIS.find(p => p.id === card.dataset.id);
+    const b = POIS.find(p => p.id === cards[i+1].dataset.id);
+    const leg = a && b ? legBetween(a, b) : null;
+    if (!leg) return;
+    totalM += leg.dist; totalMin += leg.mins;
+
+    const mode = leg.transit ? 'transit' : 'walking';
+    const label = leg.transit
+      ? `🚇 mejor en metro · ${fmtDist(leg.dist)}`
+      : `🚶 ~${leg.mins} min · ${fmtDist(leg.dist)}`;
+    card.insertAdjacentHTML('afterend', `
+      <li class="leg${leg.transit ? ' is-transit' : ''}">
+        <span class="leg-rail"></span>
+        <span class="leg-pill">${label}</span>
+        <a class="leg-go" href="${legMapsUrl(a, b, mode)}" target="_blank" rel="noopener">ver ruta</a>
+      </li>`);
+  });
+
+  const day = listEl.dataset.day;
+  const badge = document.querySelector(`.day-walk[data-day="${day}"]`);
+  if (badge){
+    badge.textContent = totalMin ? `🚶 ~${totalMin} min · ${fmtDist(totalM)}` : '';
+  }
+}
+
 function makeDraggable(cardEl, listEl){
   const handle = cardEl.querySelector('.drag-handle');
 
@@ -860,6 +973,7 @@ function makeDraggable(cardEl, listEl){
     // y eso libera la captura (el handle vive dentro de la tarjeta), cortando el arrastre.
     // Escuchar en document es inmune a que el nodo cambie de lugar.
     isDragging = true;
+    listEl.querySelectorAll('.leg').forEach(el => el.remove());  // se recalculan al soltar
     cardEl.classList.add('dragging');
     document.body.classList.add('is-dragging');
     if (navigator.vibrate) navigator.vibrate(8);
@@ -905,7 +1019,7 @@ function makeDraggable(cardEl, listEl){
       cardEl.classList.remove('dragging');
       document.body.classList.remove('is-dragging');
       isDragging = false;
-      if (moved) persistOrder(listEl);
+      if (moved){ persistOrder(listEl); refreshLegs(listEl); }
       if (renderQueued){ renderQueued = false; renderDays(); }
     }
     document.addEventListener('pointermove', onMove, {passive:false});
@@ -1010,14 +1124,44 @@ function initMap(){
 function renderMap(){
   if (!pinLayer) return;
   pinLayer.clearLayers();
+  if (routeLayer){ map.removeLayer(routeLayer); routeLayer = null; }
+
+  const dayMode = activeDayFilter !== 'all';
+  const summaryEl = document.getElementById('route-summary');
+
+  // Orden del itinerario del día (sólo puntos con coordenadas): define la
+  // numeración de los pines y el trazo de la ruta, sin que el filtro de
+  // categoría altere los números.
+  const dayRoute = dayMode
+    ? POIS.filter(p => p.day === activeDayFilter && p.lat != null && p.lon != null)
+          .sort((a,b) => a.order_index - b.order_index)
+    : [];
+
+  if (dayMode && dayRoute.length > 1){
+    routeLayer = L.polyline(dayRoute.map(p => [p.lat, p.lon]), {
+      color:'#171416', weight:2.5, opacity:.45, dashArray:'5 9', lineCap:'round'
+    }).addTo(map);
+    let m = 0, mins = 0;
+    for (let i = 0; i < dayRoute.length - 1; i++){
+      const leg = legBetween(dayRoute[i], dayRoute[i+1]);
+      if (leg){ m += leg.dist; mins += leg.mins; }
+    }
+    summaryEl.innerHTML = `<span class="route-chip">🚶 recorrido del día ~${mins} min · ${fmtDist(m)}</span>
+      <span class="route-note">estimado a pie</span>`;
+  } else {
+    summaryEl.innerHTML = '';
+  }
+
   const pts = [];
   for (const p of POIS){
     if (p.lat === null || p.lon === null) continue;
     if (activeDayFilter !== 'all' && p.day !== activeDayFilter) continue;
     const cat = CATEGORY_META[p.category] || CATEGORY_META.landmark;
     if (activeKindFilter !== 'all' && cat.kind !== activeKindFilter) continue;
+    const num = dayMode ? dayRoute.findIndex(x => x.id === p.id) + 1 : 0;
     const icon = L.divIcon({
-      html:`<div class="pin ${p.is_done?'done':''}" style="background:${cat.color};">${cat.emoji}</div>`,
+      html:`<div class="pin ${p.is_done?'done':''}" style="background:${cat.color};">${cat.emoji}${
+        num ? `<span class="pin-num">${num}</span>` : ''}</div>`,
       className:'', iconSize:[30,30], iconAnchor:[15,15], popupAnchor:[0,-15]
     });
     const marker = L.marker([p.lat, p.lon], {icon}).addTo(pinLayer);
