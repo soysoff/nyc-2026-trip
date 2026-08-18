@@ -238,6 +238,14 @@ nav.tabbar{
 .done-btn:active{transform:scale(.85);}
 .done-btn.on{background:var(--done); color:#fff; animation:pop .34s cubic-bezier(.34,1.56,.64,1);}
 @keyframes pop{0%{transform:scale(1);} 45%{transform:scale(1.28);} 100%{transform:scale(1);}}
+.maps-btn{
+  width:32px;height:32px;border-radius:50%; background:var(--bg); color:var(--ink);
+  font-size:14px; cursor:pointer; display:flex;align-items:center;justify-content:center;
+  text-decoration:none; flex-shrink:0;
+  transition:background .2s ease, transform .2s cubic-bezier(.34,1.56,.64,1);
+}
+.maps-btn:hover{background:var(--blue); }
+.maps-btn:active{transform:scale(.85);}
 .del-btn{background:none; border:none; color:#D8D2C6; font-size:13px; cursor:pointer; transition:color .2s ease, transform .15s ease;}
 .del-btn:hover{color:var(--coral);}
 .del-btn:active{transform:scale(.85);}
@@ -255,6 +263,10 @@ nav.tabbar{
 #leaflet-map{
   width:100%; height:calc(100dvh - 260px); min-height:240px; background:#F3F1EC;
   border-radius:22px 22px 0 0; overflow:hidden;
+  /* Leaflet usa z-index internos de hasta 1000 para sus panes y controles.
+     Al crear aquí un contexto de apilamiento propio, todo eso queda contenido
+     y el mapa nunca se monta sobre la barra, el FAB ni los modales. */
+  position:relative; z-index:0; isolation:isolate;
 }
 .filter-bar{
   display:flex; gap:7px; overflow-x:auto; padding:10px 16px; -webkit-overflow-scrolling:touch;
@@ -287,6 +299,14 @@ nav.tabbar{
   font-size:11.5px; padding:6px 12px; border-radius:999px; border:none; color:#fff; background:var(--ink); cursor:pointer; font-weight:800;
 }
 .popup-done.on{background:var(--done);}
+.popup-actions{display:flex; gap:7px; flex-wrap:wrap; align-items:center;}
+.popup-maps{
+  font-size:11.5px; padding:6px 12px; border-radius:999px; background:var(--blue); color:#fff;
+  font-weight:800; text-decoration:none; white-space:nowrap;
+  transition:transform .16s cubic-bezier(.34,1.56,.64,1), filter .2s ease;
+}
+.popup-maps:hover{filter:brightness(1.1);}
+.popup-maps:active{transform:scale(.94);}
 
 /* ---------- budget view ---------- */
 #view-budget{padding:10px 16px calc(24px + var(--tabbar-space));}
@@ -585,6 +605,15 @@ function esc(s){
 function money(n){ if (n === null || n === undefined) return null; return '$' + Math.round(n).toLocaleString('en-US'); }
 function memberColor(name){ const m = MEMBERS.find(m=>m.name===name); return m ? m.color : '#8A8378'; }
 
+// Abre Google Maps en modo "cómo llegar" con transporte público (lo útil en NYC).
+// Si el punto no tiene coordenadas, cae a buscar por nombre.
+function mapsUrl(p){
+  const dest = (p.lat != null && p.lon != null)
+    ? `${p.lat},${p.lon}`
+    : encodeURIComponent(`${p.name}, New York`);
+  return `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=transit`;
+}
+
 function dayLabel(day){
   if (day === 'tbd') return 'Por confirmar';
   if (day === '2026-09-23') return 'SALIDA · 23 SEP';
@@ -699,6 +728,8 @@ function poiCardHtml(p, i){
     </div>
     <div class="poi-actions">
       <button class="done-btn ${p.is_done?'on':''}" data-id="${p.id}" title="Marcar visitado">✓</button>
+      <a class="maps-btn" href="${mapsUrl(p)}" target="_blank" rel="noopener"
+         title="Cómo llegar en Google Maps" aria-label="Cómo llegar a ${esc(p.name)}">🧭</a>
       ${delBtn}
     </div>
   </li>`;
@@ -994,7 +1025,10 @@ function renderMap(){
     marker.bindPopup(`
       <div class="popup-title">${cat.emoji} ${esc(p.name)}</div>
       <div class="popup-meta">${esc(dayLabel(p.day))} · ${costTxt} ${p.schedule?(' · '+esc(p.schedule)):''}</div>
-      <button class="popup-done ${p.is_done?'on':''}" data-id="${p.id}">${p.is_done?'✓ Visitado':'Marcar visitado'}</button>
+      <div class="popup-actions">
+        <button class="popup-done ${p.is_done?'on':''}" data-id="${p.id}">${p.is_done?'✓ Visitado':'Marcar visitado'}</button>
+        <a class="popup-maps" href="${mapsUrl(p)}" target="_blank" rel="noopener">🧭 Cómo llegar</a>
+      </div>
     `);
     marker.on('popupopen', () => {
       document.querySelectorAll('.popup-done').forEach(btn => btn.onclick = () => toggleDone(btn.dataset.id));
