@@ -74,7 +74,8 @@ header.topbar{
 }
 .identity-dot{width:22px;height:22px;border-radius:50%; display:flex;align-items:center;justify-content:center; font-size:11px; font-weight:800; color:#fff;}
 
-main{flex:1; position:relative; padding-bottom:calc(94px + var(--safe-b));}
+main{flex:1; position:relative;}
+#view-days, #view-budget{padding-bottom:calc(94px + var(--safe-b));}
 .view{display:none; animation:fadein .2s ease;}
 .view.active{display:block;}
 @keyframes fadein{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;}}
@@ -127,14 +128,39 @@ nav.tabbar{
   position:absolute; top:8px; right:10px; background:none; border:none; color:var(--ink-soft); font-size:15px; cursor:pointer;
 }
 
-/* ---------- days view ---------- */
-#view-days{padding:6px 16px 20px;}
-.day-section{margin-bottom:24px;}
-.day-head{
-  display:flex; align-items:baseline; gap:8px; margin:0 2px 12px;
+/* ---------- days view (calendar pager) ---------- */
+#view-days{padding:0;}
+.day-switcher{
+  display:flex; align-items:center; gap:6px; padding:8px 10px 2px;
 }
-.day-head .d-name{font-size:17px; font-weight:800; color:var(--ink);}
-.day-head .d-zone{font-size:12px; color:var(--ink-soft); font-weight:600;}
+.day-nav-btn{
+  width:38px;height:38px;border-radius:50%; border:none; background:var(--paper); color:var(--ink);
+  font-size:19px; font-weight:700; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  box-shadow:0 1px 2px rgba(23,20,22,.05);
+}
+.day-nav-btn:active{transform:scale(.92);}
+.day-title{flex:1; text-align:center; font-size:16px; font-weight:800; color:var(--ink);}
+.day-title .d-zone{display:block; font-size:11.5px; font-weight:600; color:var(--ink-soft); margin-top:2px;}
+.day-strip{
+  display:flex; gap:6px; overflow-x:auto; padding:8px 16px 10px; -webkit-overflow-scrolling:touch;
+  touch-action:pan-x; scrollbar-width:none;
+}
+.day-strip::-webkit-scrollbar{display:none;}
+.day-pill{
+  flex-shrink:0; min-width:42px; padding:7px 10px; border-radius:14px; background:var(--paper); border:none;
+  color:var(--ink-soft); font-size:12px; font-weight:800; cursor:pointer; text-align:center;
+}
+.day-pill.active{background:var(--ink); color:#fff;}
+.day-pager{
+  display:flex; overflow-x:auto; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch;
+  scrollbar-width:none; width:100%;
+}
+.day-pager::-webkit-scrollbar{display:none;}
+.day-page{
+  flex:0 0 100%; scroll-snap-align:start; overflow-y:auto; height:100%;
+  padding:6px 16px calc(94px + var(--safe-b));
+}
+.day-page-zone{font-size:12px; font-weight:700; color:var(--ink-soft); margin:2px 2px 12px;}
 .poi-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;}
 
 .poi-card{
@@ -191,11 +217,10 @@ nav.tabbar{
 
 /* ---------- map view ---------- */
 #view-map{padding:0;}
-#leaflet-map{width:100%; height:calc(100dvh - 130px - var(--safe-t)); background:#EFEAE0;}
-.leaflet-tile-pane{filter:saturate(.85) brightness(1.03);}
+#leaflet-map{width:100%; height:60vh; background:#F3F1EC;}
 .filter-bar{
   display:flex; gap:7px; overflow-x:auto; padding:10px 16px; -webkit-overflow-scrolling:touch;
-  background:var(--bg);
+  background:var(--bg); touch-action:pan-x;
 }
 .filter-bar::-webkit-scrollbar{display:none;}
 .filter-chip{
@@ -262,7 +287,13 @@ nav.tabbar{
   border-radius:26px 26px 0 0;
   padding:20px 18px calc(24px + var(--safe-b));
 }
-.sheet h3{margin:0 0 16px; font-size:18px; color:var(--ink);}
+.sheet-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
+.sheet h3{margin:0; font-size:18px; color:var(--ink);}
+.sheet-close{
+  width:32px;height:32px;border-radius:50%; border:none; background:var(--paper); color:var(--ink-soft);
+  font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.sheet-close:active{transform:scale(.92);}
 .field{margin-bottom:12px;}
 .field label{display:block; font-size:11.5px; color:var(--ink-soft); font-weight:700; margin-bottom:6px;}
 .field input, .field select, .field textarea{
@@ -332,7 +363,15 @@ nav.tabbar{
       <div id="leaflet-map"></div>
     </section>
 
-    <section id="view-days" class="view active"></section>
+    <section id="view-days" class="view active">
+      <div class="day-switcher">
+        <button class="day-nav-btn" id="day-prev" aria-label="Día anterior">‹</button>
+        <div class="day-title" id="day-title"></div>
+        <button class="day-nav-btn" id="day-next" aria-label="Día siguiente">›</button>
+      </div>
+      <div class="day-strip" id="day-strip"></div>
+      <div class="day-pager" id="day-pager"></div>
+    </section>
 
     <section id="view-budget" class="view"></section>
   </main>
@@ -361,7 +400,10 @@ nav.tabbar{
 
   <div class="sheet-overlay hidden" id="add-overlay">
     <div class="sheet">
-      <h3>✨ Agregar punto de interés</h3>
+      <div class="sheet-head">
+        <h3>✨ Agregar punto de interés</h3>
+        <button type="button" class="sheet-close" id="btn-close-add" aria-label="Cerrar">✕</button>
+      </div>
       <form id="add-form">
         <div class="field">
           <label>Nombre</label>
@@ -393,7 +435,7 @@ nav.tabbar{
         </div>
         <div class="two-col">
           <div class="field">
-            <label>Costo (USD, opcional)</label>
+            <label>Costo por persona (USD, opcional)</label>
             <input type="number" id="f-cost" min="0" step="1" placeholder="0" />
           </div>
           <div class="field">
@@ -534,7 +576,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById(btn.dataset.view).classList.add('active');
-    if (btn.dataset.view === 'view-map' && map) setTimeout(()=>map.invalidateSize(), 80);
+    if (btn.dataset.view === 'view-map') setTimeout(sizeMap, 60);
+    if (btn.dataset.view === 'view-days') setTimeout(() => { sizeDayPager(); scrollToDay(currentDayKey, false); }, 60);
   });
 });
 
@@ -548,7 +591,7 @@ function groupByDay(list){
 
 function poiCardHtml(p){
   const cat = CATEGORY_META[p.category] || CATEGORY_META.landmark;
-  const costChip = p.cost !== null && p.cost !== undefined ? `<span class="chip cost">${p.cost==0?'Gratis':money(p.cost)}</span>` : '';
+  const costChip = p.cost !== null && p.cost !== undefined ? `<span class="chip cost">${p.cost==0?'Gratis':money(p.cost)+' /persona'}</span>` : '';
   const schedChip = p.schedule ? `<span class="chip">🕐 ${esc(p.schedule)}</span>` : '';
   const zoneChip = p.zone && p.zone !== '—' ? `<span class="chip">📍 ${esc(p.zone)}</span>` : '';
   const addedChip = p.added_by ? `<span class="chip added">+ ${esc(p.added_by)}</span>` : '';
@@ -579,27 +622,91 @@ function poiCardHtml(p){
   </li>`;
 }
 
+let daysCache = [];
+let currentDayKey = null;
+
 function renderDays(){
   const g = groupByDay(POIS);
-  const el = document.getElementById('view-days');
-  el.innerHTML = DAY_ORDER.filter(d => g[d] && g[d].length).map(day => {
+  const days = DAY_ORDER.filter(d => g[d] && g[d].length);
+  daysCache = days;
+  if (!days.length) return;
+  if (!currentDayKey || !days.includes(currentDayKey)) currentDayKey = days[0];
+
+  const strip = document.getElementById('day-strip');
+  strip.innerHTML = days.map(d => {
+    const short = d === 'tbd' ? '?' : (d === '2026-09-23' ? '23' : new Date(d+'T12:00:00').getDate());
+    return `<button class="day-pill ${d===currentDayKey?'active':''}" data-day="${d}">${short}</button>`;
+  }).join('');
+  strip.querySelectorAll('.day-pill').forEach(b => b.addEventListener('click', () => scrollToDay(b.dataset.day, true)));
+
+  const pager = document.getElementById('day-pager');
+  pager.innerHTML = days.map(day => {
     const items = g[day];
     const zones = [...new Set(items.map(p=>p.zone).filter(z=>z && z!=='—'))].slice(0,3).join(' · ');
-    return `<div class="day-section">
-      <div class="day-head"><span class="d-name">${dayLabel(day)}</span><span class="d-zone">${esc(zones)}</span></div>
+    return `<div class="day-page" data-day="${day}">
+      ${zones ? `<div class="day-page-zone">📍 ${esc(zones)}</div>` : ''}
       <ul class="poi-list" data-day="${day}">${items.map(poiCardHtml).join('')}</ul>
     </div>`;
   }).join('');
 
-  el.querySelectorAll('.done-btn').forEach(b=>b.addEventListener('click', ()=>toggleDone(b.dataset.id)));
-  el.querySelectorAll('.del-btn').forEach(b=>b.addEventListener('click', ()=>deletePoi(b.dataset.id)));
-  el.querySelectorAll('.poi-note').forEach(t=>t.addEventListener('change', ()=>updateField(t.dataset.id, 'notes', t.value)));
-  el.querySelectorAll('.t-cost').forEach(i=>i.addEventListener('change', ()=>updateField(i.dataset.id, 'transport_cost', i.value===''?null:Number(i.value))));
-  el.querySelectorAll('.t-sched').forEach(i=>i.addEventListener('change', ()=>updateField(i.dataset.id, 'transport_schedule', i.value||null)));
-  el.querySelectorAll('.poi-list').forEach(list => {
+  pager.querySelectorAll('.done-btn').forEach(b=>b.addEventListener('click', ()=>toggleDone(b.dataset.id)));
+  pager.querySelectorAll('.del-btn').forEach(b=>b.addEventListener('click', ()=>deletePoi(b.dataset.id)));
+  pager.querySelectorAll('.poi-note').forEach(t=>t.addEventListener('change', ()=>updateField(t.dataset.id, 'notes', t.value)));
+  pager.querySelectorAll('.t-cost').forEach(i=>i.addEventListener('change', ()=>updateField(i.dataset.id, 'transport_cost', i.value===''?null:Number(i.value))));
+  pager.querySelectorAll('.t-sched').forEach(i=>i.addEventListener('change', ()=>updateField(i.dataset.id, 'transport_schedule', i.value||null)));
+  pager.querySelectorAll('.poi-list').forEach(list => {
     list.querySelectorAll('.poi-card').forEach(card => makeDraggable(card, list));
   });
+
+  updateDayTitle();
+  sizeDayPager();
+  scrollToDay(currentDayKey, false);
 }
+
+function updateDayTitle(){
+  const g = groupByDay(POIS);
+  const items = g[currentDayKey] || [];
+  const zones = [...new Set(items.map(p=>p.zone).filter(z=>z && z!=='—'))].slice(0,3).join(' · ');
+  document.getElementById('day-title').innerHTML =
+    `${dayLabel(currentDayKey)}${zones ? `<span class="d-zone">${esc(zones)}</span>` : ''}`;
+  document.querySelectorAll('.day-pill').forEach(b => b.classList.toggle('active', b.dataset.day === currentDayKey));
+}
+
+function scrollToDay(day, smooth){
+  const pager = document.getElementById('day-pager');
+  const page = pager.querySelector(`.day-page[data-day="${day}"]`);
+  if (!page) return;
+  pager.scrollTo({left: page.offsetLeft, behavior: smooth ? 'smooth' : 'auto'});
+  currentDayKey = day;
+  updateDayTitle();
+}
+
+function sizeDayPager(){
+  const pager = document.getElementById('day-pager');
+  if (!pager) return;
+  const top = pager.getBoundingClientRect().top;
+  pager.style.height = Math.max(240, window.innerHeight - top) + 'px';
+}
+window.addEventListener('resize', sizeDayPager);
+
+let pagerScrollTimer = null;
+document.getElementById('day-pager').addEventListener('scroll', () => {
+  clearTimeout(pagerScrollTimer);
+  pagerScrollTimer = setTimeout(() => {
+    const pager = document.getElementById('day-pager');
+    const idx = Math.round(pager.scrollLeft / Math.max(1, pager.clientWidth));
+    const day = daysCache[idx];
+    if (day && day !== currentDayKey){ currentDayKey = day; updateDayTitle(); }
+  }, 100);
+});
+document.getElementById('day-prev').addEventListener('click', () => {
+  const idx = daysCache.indexOf(currentDayKey);
+  if (idx > 0) scrollToDay(daysCache[idx-1], true);
+});
+document.getElementById('day-next').addEventListener('click', () => {
+  const idx = daysCache.indexOf(currentDayKey);
+  if (idx >= 0 && idx < daysCache.length-1) scrollToDay(daysCache[idx+1], true);
+});
 
 function makeDraggable(cardEl, listEl){
   const handle = cardEl.querySelector('.drag-handle');
@@ -660,10 +767,19 @@ async function deletePoi(id){
 }
 
 /* ---------------- map ---------------- */
+function sizeMap(){
+  const mapDiv = document.getElementById('leaflet-map');
+  if (!mapDiv) return;
+  const top = mapDiv.getBoundingClientRect().top;
+  mapDiv.style.height = Math.max(240, window.innerHeight - top) + 'px';
+  if (map) map.invalidateSize();
+}
+window.addEventListener('resize', sizeMap);
+
 function initMap(){
   map = L.map('leaflet-map', {zoomControl:true}).setView([40.735,-73.99], 12.3);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom:19, attribution:'© OpenStreetMap'
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    maxZoom:19, attribution:'© OpenStreetMap © CARTO', subdomains:'abcd'
   }).addTo(map);
   pinLayer = L.layerGroup().addTo(map);
 
@@ -711,8 +827,9 @@ function renderMap(){
 /* ---------------- budget ---------------- */
 function renderBudget(){
   const el = document.getElementById('view-budget');
-  const total = POIS.reduce((s,p)=>s + (Number(p.cost)||0), 0);
-  const perPerson = total / MEMBERS.length;
+  // Los costos del itinerario están capturados por persona (así venían en el sheet original).
+  const perPerson = POIS.reduce((s,p)=>s + (Number(p.cost)||0), 0);
+  const total = perPerson * MEMBERS.length;
   const g = groupByDay(POIS);
   const dayRows = DAY_ORDER.filter(d=>g[d]).map(d => {
     const sum = g[d].reduce((s,p)=>s+(Number(p.cost)||0),0);
@@ -725,17 +842,17 @@ function renderBudget(){
 
   el.innerHTML = `
     <div class="budget-hero">
-      <div class="budget-tile"><div class="label">Total del viaje</div><div class="value mono-num">${money(total)}</div></div>
-      <div class="budget-tile alt"><div class="label">Por persona (÷${MEMBERS.length})</div><div class="value mono-num">${money(perPerson)}</div></div>
+      <div class="budget-tile"><div class="label">Total del viaje (×${MEMBERS.length})</div><div class="value mono-num">${money(total)}</div></div>
+      <div class="budget-tile alt"><div class="label">Por persona</div><div class="value mono-num">${money(perPerson)}</div></div>
     </div>
-    <div class="section-title">Por día</div>
+    <div class="section-title">Por día · por persona</div>
     ${dayRows.map(r => `
       <div class="bar-row">
         <div class="bar-label">${dayLabel(r.day)}</div>
         <div class="bar-track"><div class="bar-fill" style="width:${(r.sum/maxDay*100).toFixed(0)}%;"></div></div>
         <div class="bar-val mono-num">${money(r.sum)}</div>
       </div>`).join('')}
-    <div class="section-title">Turismo vs Comida</div>
+    <div class="section-title">Turismo vs Comida · por persona</div>
     <div class="split-bar">
       <div style="width:${(tourSum/splitTotal*100).toFixed(0)}%; background:var(--blue);">${tourSum>0?money(tourSum):''}</div>
       <div style="width:${(foodSum/splitTotal*100).toFixed(0)}%; background:var(--orange);">${foodSum>0?money(foodSum):''}</div>
@@ -749,6 +866,7 @@ function openAddModal(){
   if (!requireIdentity()) return;
   const daySel = document.getElementById('f-day');
   daySel.innerHTML = DAY_ORDER.map(d=>`<option value="${d}">${dayLabel(d)}</option>`).join('');
+  if (currentDayKey) daySel.value = currentDayKey;
   const zones = [...new Set(POIS.map(p=>p.zone).filter(z=>z && z!=='—'))];
   document.getElementById('zone-list').innerHTML = zones.map(z=>`<option value="${esc(z)}">`).join('');
   document.getElementById('add-form').reset();
@@ -770,6 +888,7 @@ function openAddModal(){
 }
 document.getElementById('btn-fab').addEventListener('click', openAddModal);
 document.getElementById('btn-cancel-add').addEventListener('click', () => document.getElementById('add-overlay').classList.add('hidden'));
+document.getElementById('btn-close-add').addEventListener('click', () => document.getElementById('add-overlay').classList.add('hidden'));
 
 document.getElementById('add-form').addEventListener('submit', async (e) => {
   e.preventDefault();
