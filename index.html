@@ -812,7 +812,9 @@ function makeDraggable(cardEl, listEl){
     let moved = false;
     let raf = null;
 
-    handle.setPointerCapture(e.pointerId);
+    // Ojo: NO usamos setPointerCapture. Al reordenar movemos la tarjeta en el DOM,
+    // y eso libera la captura (el handle vive dentro de la tarjeta), cortando el arrastre.
+    // Escuchar en document es inmune a que el nodo cambie de lugar.
     isDragging = true;
     cardEl.classList.add('dragging');
     document.body.classList.add('is-dragging');
@@ -853,26 +855,31 @@ function makeDraggable(cardEl, listEl){
     }
     function onEnd(){
       cancelAnimationFrame(raf);
-      handle.removeEventListener('pointermove', onMove);
-      handle.removeEventListener('pointerup', onEnd);
-      handle.removeEventListener('pointercancel', onEnd);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onEnd);
+      document.removeEventListener('pointercancel', onEnd);
       cardEl.classList.remove('dragging');
       document.body.classList.remove('is-dragging');
       isDragging = false;
       if (moved) persistOrder(listEl);
       if (renderQueued){ renderQueued = false; renderDays(); }
     }
-    handle.addEventListener('pointermove', onMove);
-    handle.addEventListener('pointerup', onEnd);
-    handle.addEventListener('pointercancel', onEnd);
+    document.addEventListener('pointermove', onMove, {passive:false});
+    document.addEventListener('pointerup', onEnd);
+    document.addEventListener('pointercancel', onEnd);
   });
 }
 
 async function persistOrder(listEl){
   const ids = [...listEl.querySelectorAll('.poi-card')].map(c=>c.dataset.id);
-  const rows = ids.map((id, idx) => ({id, order_index: idx}));
   ids.forEach((id, idx) => { const p = POIS.find(p=>p.id===id); if (p) p.order_index = idx; });
-  await sb.from('pois').upsert(rows);
+  // update por fila, no upsert: un upsert parcial choca contra las columnas NOT NULL
+  // (day, zone, category, name) y falla en silencio, perdiendo el nuevo orden.
+  const results = await Promise.all(
+    ids.map((id, idx) => sb.from('pois').update({order_index: idx}).eq('id', id))
+  );
+  const failed = results.find(r => r.error);
+  if (failed) console.error('No se pudo guardar el orden:', failed.error);
 }
 
 /* ---------------- mutations ---------------- */
