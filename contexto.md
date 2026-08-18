@@ -3,21 +3,38 @@
 App familiar para el viaje a Nueva York del **16 al 23 de septiembre de 2026**.
 Este archivo resume qué es, cómo está hecho, por qué se tomó cada decisión y qué falta.
 
+> **Estado al 18 de agosto de 2026:** la app está desplegada, funcionando y verificada en navegador real. Todo lo listado abajo está construido; no queda nada a medias. Lo que sigue son decisiones de contenido de la familia (precios de transporte, confirmar el tranvía) más ideas opcionales.
+
 ---
 
 ## 1. Qué es
 
-Una web app (PWA) donde las 8 personas del viaje ven y editan el mismo plan en vivo:
+Una web app (PWA) donde las 8 personas del viaje ven y editan el mismo plan en vivo. Se abre con un link, sin instalar nada y sin crear cuenta.
 
-- **Días** — itinerario tipo calendario: se desliza horizontalmente para cambiar de día, y las actividades se reordenan arrastrando.
-- **Mapa** — mapa real de NYC con un pin por lugar, filtrable por día y por tipo (turismo / comida).
+- **Días** — itinerario tipo calendario: se desliza horizontalmente para cambiar de día (o con las flechas ‹ › y la tira de fechas), y las actividades se reordenan arrastrando el `⠿`. Entre tarjeta y tarjeta aparece el tramo a pie, y arriba el total del día.
+- **Mapa** — mapa real de NYC (tiles claros de CartoDB), pines por categoría, filtros por día y por tipo. Al elegir un día se dibuja la ruta punteada en orden con los pines numerados y un resumen del recorrido.
 - **Presupuesto** — total del viaje, costo por persona, desglose por día y turismo vs comida.
 - **Actividad** — feed de quién agregó o marcó qué.
 - **Notificaciones push** reales al celular cuando alguien cambia algo.
+- **Botón 🧭 "Cómo llegar"** en cada tarjeta y en el popup del mapa: abre Google Maps en modo transporte público.
+- **Agregar puntos propios** con el botón `+`: nombre, día, categoría, costo, horario, zona, notas y ubicación marcable en un mini-mapa.
+- Tocar el título **NYC 2026** vuelve al calendario desde cualquier vista.
 
 ### Integrantes
-Gaby, Adolfo, Nancy, Sofi, Tefa, Ale, Dinhora, Luis.
+Gaby, Adolfo, Nancy, Sofi, Tefa, Ale, Dinhora, Luis. Cada uno tiene un color asignado en la tabla `members`.
 No hay login real: al abrir por primera vez cada quien toca su nombre y se guarda en `localStorage` de ese dispositivo. Sirve para atribuir cambios, no para seguridad.
+
+### Categorías e iconos
+La división que pidió Sofi: **todo lo de comida comparte el mismo color naranja** para distinguirlo de un vistazo en el mapa, y el emoji da el detalle.
+
+| Turismo | | Comida (todas en naranja) | |
+|---|---|---|---|
+| 🗼 landmark | ícono / monumento | 🍽️ restaurant | restaurante |
+| 🖼️ museum | museo | 🧁 bakery | bakery / postre |
+| 🌳 park | parque | 🥡 streetfood | callejera / casual |
+| 🛍️ shopping | shopping | | |
+| 🎟️ show | show / evento | | |
+| ⛴️ transit | transporte / ferry | | |
 
 ---
 
@@ -32,7 +49,27 @@ No hay login real: al abrir por primera vez cada quien toca su nombre y se guard
 | Backend (Supabase) | proyecto `ny-family-trip`, ref `ppeiyhgwrbrisnvxyyyc`, región us-east-2 |
 | Cuenta | soyso.studio@gmail.com (GitHub: `soysoff`, Vercel: `soysostudio`) |
 
-**Fuente original de los datos:** un Google Sheet de la familia con actividades, costos, horarios y "restaurante cercano" por día. Ese sheet ya fue volcado a la base; ahora la base es la fuente de verdad.
+**Fuente original de los datos:** un Google Sheet de la familia con actividades, costos, horarios y "restaurante cercano" por día. Ese sheet ya fue volcado a la base; **ahora la base es la fuente de verdad** — editar el sheet ya no cambia nada.
+
+Al volcarlo se hicieron dos cosas que no estaban en el sheet: la columna "restaurante cercano" se convirtió en **puntos de comida independientes** (con su propio pin), y se geocodificaron las coordenadas de cada lugar.
+
+### El itinerario hoy
+
+| Día | Lugares | Zona | Costo/persona |
+|---|---|---|---|
+| Mié 16 sep | 10 | Midtown | $22 |
+| Jue 17 sep | 5 | Central Park & UES | $42 |
+| Vie 18 sep | 3 | Midtown | $42 |
+| Sáb 19 sep | 2 | Upper West Side | $52 |
+| Dom 20 sep | 10 | Financial District · Harbor | $43 |
+| Lun 21 sep | 8 | Brooklyn · Chelsea · LES | $20 |
+| Mar 22 sep | 6 | Outlet · Chinatown · Midtown | $82 |
+| Mié 23 sep | 1 | salida | $0 |
+| Por confirmar | 1 | Roosevelt Island | — |
+
+**Total: $303 por persona · $2.424 entre los 8** (sin transporte).
+
+Cuatro lugares no tienen coordenadas y por eso no salen en el mapa, sólo en Días y Presupuesto: Empire State, Estatua de la Libertad, el outlet (Woodbury Common, a ~1h de la ciudad) y su food court.
 
 ---
 
@@ -93,7 +130,15 @@ La llave privada VAPID y el secreto del webhook viven **solo dentro de la Edge F
 
 **Por qué el transporte está vacío.** La familia todavía no tiene esos precios/horarios. Los campos existen en cada tarjeta y son editables, pero no suman al total hasta que se llenen.
 
-**Estilo visual.** La primera versión fue Y2K/cyberpunk neón; se descartó a pedido de Sofi por una dirección limpia y moderna: fondo crema, tarjetas blancas, tipografía bold redondeada, color plano por categoría, barra de navegación negra flotante.
+**Estilo visual.** La primera versión fue Y2K/cyberpunk neón; se descartó a pedido de Sofi, que mandó referencias de apps limpias y modernas. La dirección actual sale de ahí: fondo crema `#F6F2EA`, tarjetas blancas muy redondeadas, tipografía Plus Jakarta Sans bold, color plano por categoría, barra de navegación negra flotante en píldora. Nada de neón, gradientes ni scanlines.
+
+**Tokens de color.**
+`--bg #F6F2EA` · `--paper #FFF` · `--ink #171416` · `--ink-soft #5B5560`
+Acentos: azul `#3B55E8`, violeta `#8654F0`, verde `#2E9E5B`, amarillo `#F0AE2E`, coral `#FF5C45`, teal `#0FA99A`, naranja `#FF8A3D` (comida).
+
+**Movimiento.** Hay un sistema de animaciones deliberado: entrada escalonada de tarjetas *sólo en la primera carga*, pines que caen al mapa, barras del presupuesto que crecen, sheet que sube, "pop" al marcar visitado, la pestaña activa se expande y muestra su nombre. Todo respeta `prefers-reduced-motion`. La regla importante: **un re-render por sincronización nunca debe animar**, porque se lee como parpadeo (ver bugs).
+
+**Mapa minimalista.** Se cambió de los tiles estándar de OpenStreetMap a **CartoDB Positron** (grises claros) para que los pines de color sean lo único que resalte.
 
 ---
 
@@ -127,18 +172,32 @@ vercel --prod --yes        # despliega a producción
 
 Node vive en `~/.local/nodejs` (instalado sin permisos de administrador). `gh` vive en `~/.local/bin`.
 
+> ⚠️ **Vercel NO despliega solo al hacer push.** Al enlazar el proyecto, Vercel no pudo conectarse al repo de GitHub (pidió permisos de admin sobre el repo). El deploy es **manual**: `vercel --prod --yes`. Si algún día se quiere deploy automático, hay que importar el repo desde vercel.com.
+
 Para tocar la base de datos se usan las herramientas MCP de Supabase (`execute_sql`, `apply_migration`, `deploy_edge_function`) sobre el proyecto `ppeiyhgwrbrisnvxyyyc`.
 
-**Al probar cambios, verificar en un navegador real** (Playwright con Chrome headless), no solo asumir que funciona: varios de los bugs de arriba solo se veían corriendo la app de verdad.
+### Cómo se verifica
+**Al probar cambios, abrir la app en un navegador real** (Playwright con Chrome headless), no sólo asumir que funciona: casi todos los bugs de arriba sólo se veían corriendo la app de verdad. Lo que ha servido:
+
+- Escuchar `console` y `pageerror` para detectar errores silenciosos.
+- Comparar geometría con `getBoundingClientRect()` y `elementFromPoint()` para problemas de superposición y scroll.
+- Instrumentar funciones (`window.renderDays = contar(...)`) para probar que algo **no** se ejecuta de más.
+- Recargar la página después de una acción para confirmar que se guardó en la base, no sólo en pantalla.
+
+**Ojo:** las pruebas escriben en la base de producción (no hay entorno de staging). Después de probar drags o checks, hay que **restaurar los datos** con `execute_sql` — durante el desarrollo se hizo varias veces.
 
 ---
 
-## 7. Pendientes / ideas
+## 7. Pendientes
 
-- Llenar costos y horarios de transporte cuando se sepan, y decidir si suman al total.
-- Confirmar el tranvía de Roosevelt Island (hoy está en el bucket "Por confirmar").
-- Decidir la opción para la Estatua de la Libertad: Staten Island Ferry (gratis) o Castle Clinton ($25).
-- El outlet (Woodbury Common) está fuera del mapa por estar a ~1h de la ciudad; aparece en Días y Presupuesto.
-- Posible: subir fotos por punto, o marcar quién quiere ir a qué.
-- El orden de algunos días no está optimizado para caminar (el 20 de sep suma ~6 km zigzagueando por el Financial District). Ahora que los tramos son visibles, se puede reordenar arrastrando para acortarlo.
-- Si se quieren tiempos reales de metro dentro de la app: llave de Google Directions API + facturación.
+### Decisiones de la familia (no son trabajo de código)
+- **Transporte:** llenar costos y horarios cuando se sepan. Los campos ya existen en cada tarjeta y son editables por cualquiera; hoy no suman al total.
+- **Tranvía de Roosevelt Island:** venía incompleto en el sheet, está en el bucket "Por confirmar".
+- **Estatua de la Libertad:** decidir entre Staten Island Ferry (gratis, el barco naranja) o Castle Clinton ($25).
+- **Orden del 20 de sep:** suma ~6 km zigzagueando por el Financial District aunque todo está cerca. Ahora que los tramos se ven, conviene reordenarlo arrastrando para acortarlo.
+
+### Ideas opcionales
+- Tiempos reales de metro dentro de la app → requiere llave de Google Directions API con facturación activada (Google regala $200/mes; este uso costaría $0, pero hay que registrar tarjeta).
+- Subir fotos por punto.
+- Marcar quién quiere ir a qué (votación por lugar).
+- Deploy automático conectando el repo desde vercel.com.
