@@ -866,10 +866,10 @@ function openAddModal(){
   if (!requireIdentity()) return;
   const daySel = document.getElementById('f-day');
   daySel.innerHTML = DAY_ORDER.map(d=>`<option value="${d}">${dayLabel(d)}</option>`).join('');
-  if (currentDayKey) daySel.value = currentDayKey;
   const zones = [...new Set(POIS.map(p=>p.zone).filter(z=>z && z!=='—'))];
   document.getElementById('zone-list').innerHTML = zones.map(z=>`<option value="${esc(z)}">`).join('');
   document.getElementById('add-form').reset();
+  if (currentDayKey) daySel.value = currentDayKey;
   miniMarker = null;
   document.getElementById('mini-map-hint').textContent = 'Toca el mapa para marcar el lugar.';
   document.getElementById('add-overlay').classList.remove('hidden');
