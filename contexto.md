@@ -60,6 +60,13 @@ Dependencias por CDN: **Leaflet** (mapa) y **supabase-js** (datos y realtime). T
 
 **RLS está activo pero las políticas son abiertas a `anon`** (leer y escribir). Es deliberado: es una app familiar privada por link, no un producto público. La seguridad real es que nadie más conoce la URL. Si algún día se abre a más gente, esto hay que cambiarlo.
 
+### Rutas y tiempos de caminata
+Cada día muestra su recorrido: en el mapa, una línea punteada que une los lugares en el orden del itinerario con los pines numerados; en la vista de días, un tramo entre tarjeta y tarjeta (`🚶 ~8 min · 630 m`) y el total del día.
+
+**Los tiempos son estimados y se calculan en el dispositivo**, no con una API: distancia en línea recta (Haversine) multiplicada por 1.28 para compensar que Manhattan se camina en rejilla y no en diagonal, a ~4.8 km/h. Si un tramo pasa de 1.5 km se marca como "mejor en metro".
+
+Se evaluó usar la API pública de OSRM y se descartó: su servidor demo ignora el perfil peatonal (devuelve lo mismo para `foot`, `driving`, `bike`) y no ofrece garantías de disponibilidad. Para el dato real de metro está el enlace directo a Google Maps en cada tramo y en cada lugar (`travelmode=transit`), que no cuesta nada ni requiere llave. Si algún día se quieren tiempos reales de transporte dentro de la app, haría falta una llave de Google Directions API con facturación activada.
+
 ### Tiempo real
 Supabase Realtime (`postgres_changes`) sobre `pois` y `activity_log`. Cualquier cambio aparece en los demás dispositivos sin recargar.
 
@@ -97,6 +104,7 @@ Vale la pena dejarlos escritos porque son sutiles y podrían volver:
 - **El drag no guardaba el orden.** `persistOrder` usaba `sb.from('pois').upsert(...)` con solo `id` y `order_index`. Un upsert parcial intenta INSERT y choca con las columnas NOT NULL (`day`, `zone`, `category`, `name`), fallando en silencio. Ahora se hace un `update` por fila.
 - **El drag se cortaba tras mover una posición.** Se usaba `setPointerCapture` sobre el handle, pero el handle vive dentro de la tarjeta; al reordenar movemos esa tarjeta en el DOM, lo que libera la captura y mata el seguimiento. Ahora los listeners de `pointermove`/`pointerup` van en `document`.
 - **Parpadeo al soltar una tarjeta arrastrada.** Al guardar el nuevo orden, Supabase Realtime nos devolvía nuestros propios `UPDATE` y el handler llamaba `renderDays()`, redibujando toda la lista (con su animación de entrada) justo después de soltar. Ahora se comparan los campos visibles: si el evento entrante ya coincide con el estado local, se sincroniza el objeto en silencio y no se redibuja. Además, marcar "visitado" parchea sólo esa tarjeta en lugar de re-renderizar, y la animación de entrada corre únicamente en la primera carga.
+- **El mapa se montaba encima de la barra, el FAB y los modales.** Leaflet usa z-index internos de hasta 1000 para sus panes y controles, muy por encima de los de la app (40–50). Se resolvió dándole a `#leaflet-map` su propio contexto de apilamiento (`position:relative; z-index:0; isolation:isolate`), que encierra todos esos valores.
 - **El mapa quedaba debajo de la barra de navegación.** El alto se calculaba como `innerHeight - top`, ignorando que la barra flota encima. Se resta el espacio real de la barra, medido en runtime.
 - **Doble scroll raro en mapa y filtros.** Mismo origen: un `padding-bottom` heredado más el alto mal calculado dejaban ~94px de sobra.
 - **El día no se precargaba al agregar un punto.** `form.reset()` corría *después* de asignar el día y lo borraba.
@@ -132,3 +140,5 @@ Para tocar la base de datos se usan las herramientas MCP de Supabase (`execute_s
 - Decidir la opción para la Estatua de la Libertad: Staten Island Ferry (gratis) o Castle Clinton ($25).
 - El outlet (Woodbury Common) está fuera del mapa por estar a ~1h de la ciudad; aparece en Días y Presupuesto.
 - Posible: subir fotos por punto, o marcar quién quiere ir a qué.
+- El orden de algunos días no está optimizado para caminar (el 20 de sep suma ~6 km zigzagueando por el Financial District). Ahora que los tramos son visibles, se puede reordenar arrastrando para acortarlo.
+- Si se quieren tiempos reales de metro dentro de la app: llave de Google Directions API + facturación.
