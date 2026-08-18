@@ -187,8 +187,10 @@ nav.tabbar{
   box-shadow:0 1px 2px rgba(23,20,22,.05), 0 2px 16px rgba(23,20,22,.05);
   display:flex; gap:11px; align-items:flex-start;
   transition:box-shadow .2s ease, transform .2s cubic-bezier(.22,.8,.3,1), opacity .2s ease;
-  animation:cardIn .38s cubic-bezier(.22,.8,.3,1) backwards;
 }
+/* La entrada escalonada sólo corre en la primera carga, nunca en un re-render
+   por sincronización o por reordenar (si no, la lista "parpadea"). */
+.day-pager.fresh .poi-card{animation:cardIn .38s cubic-bezier(.22,.8,.3,1) backwards;}
 @keyframes cardIn{from{opacity:0; transform:translateY(12px);} to{opacity:1; transform:none;}}
 .poi-card.dragging{
   opacity:.92; transform:scale(1.03); z-index:5;
@@ -706,6 +708,8 @@ let daysCache = [];
 let currentDayKey = null;
 let isDragging = false;
 let renderQueued = false;
+let animateNextRender = true;   // sólo la primera carga entra animada
+let freshTimer = null;
 
 function renderDays(){
   // No re-dibujar mientras alguien arrastra: destruiría la tarjeta en movimiento.
@@ -739,6 +743,15 @@ function renderDays(){
 
   const newPage = pager.querySelector(`.day-page[data-day="${currentDayKey}"]`);
   if (newPage && prevScroll) newPage.scrollTop = prevScroll;
+
+  if (animateNextRender){
+    animateNextRender = false;
+    pager.classList.add('fresh');
+    clearTimeout(freshTimer);
+    freshTimer = setTimeout(() => pager.classList.remove('fresh'), 800);
+  } else {
+    pager.classList.remove('fresh');
+  }
 
   pager.querySelectorAll('.done-btn').forEach(b=>b.addEventListener('click', ()=>toggleDone(b.dataset.id)));
   pager.querySelectorAll('.del-btn').forEach(b=>b.addEventListener('click', ()=>deletePoi(b.dataset.id)));
@@ -883,13 +896,33 @@ async function persistOrder(listEl){
 }
 
 /* ---------------- mutations ---------------- */
+// Parchea sólo la tarjeta afectada. Redibujar toda la lista para un check
+// hacía saltar el scroll y parpadear las tarjetas.
+function paintDone(id, done){
+  document.querySelectorAll(`.poi-card[data-id="${id}"]`).forEach(card => {
+    card.classList.toggle('is-done', done);
+    const btn = card.querySelector('.done-btn');
+    if (btn) btn.classList.toggle('on', done);
+    const nameEl = card.querySelector('.poi-name');
+    if (!nameEl) return;
+    const pill = nameEl.querySelector('.done-pill');
+    if (done && !pill) nameEl.insertAdjacentHTML('beforeend', '<span class="done-pill">✓ Visitado</span>');
+    if (!done && pill) pill.remove();
+  });
+}
+
 async function toggleDone(id){
   if (!requireIdentity()) return;
   const p = POIS.find(p=>p.id===id); if (!p) return;
   const next = !p.is_done;
   p.is_done = next; p.updated_by = CURRENT_USER;
-  renderDays(); renderMap(); renderBudget();
-  await sb.from('pois').update({is_done: next, updated_by: CURRENT_USER}).eq('id', id);
+  paintDone(id, next); renderMap(); renderBudget();
+  const {error} = await sb.from('pois').update({is_done: next, updated_by: CURRENT_USER}).eq('id', id);
+  if (error){                       // revertir si el guardado falla
+    p.is_done = !next;
+    paintDone(id, !next); renderMap(); renderBudget();
+    console.error('No se pudo guardar el check:', error);
+  }
 }
 async function updateField(id, field, value){
   if (!requireIdentity()) return;
@@ -1138,15 +1171,33 @@ document.getElementById('btn-bell').addEventListener('click', subscribePush);
 document.getElementById('ios-dismiss').addEventListener('click', () => document.getElementById('ios-banner').classList.remove('show'));
 
 /* ---------------- realtime ---------------- */
+// Campos que el usuario ve. Si un evento de Realtime no cambia ninguno,
+// no vale la pena volver a dibujar.
+const VISIBLE_FIELDS = ['day','zone','category','name','cost','schedule',
+  'transport_cost','transport_schedule','lat','lon','notes','is_done','added_by','order_index'];
+
+function sameToUser(a, b){
+  if (!a || !b) return false;
+  return VISIBLE_FIELDS.every(k => String(a[k]) === String(b[k]));
+}
+
 function subscribeRealtime(){
   sb.channel('pois-rt')
     .on('postgres_changes', {event:'*', schema:'public', table:'pois'}, payload => {
       if (payload.eventType === 'INSERT'){
-        if (!POIS.find(p=>p.id===payload.new.id)) POIS.push(payload.new);
+        if (POIS.find(p=>p.id===payload.new.id)) return;   // ya lo agregamos localmente
+        POIS.push(payload.new);
       } else if (payload.eventType === 'UPDATE'){
         const idx = POIS.findIndex(p=>p.id===payload.new.id);
-        if (idx>=0) POIS[idx] = payload.new;
+        if (idx < 0) return;
+        // Eco de nuestro propio cambio (ya aplicado de forma optimista): sólo
+        // sincronizamos el objeto, sin re-dibujar. Esto es lo que causaba el
+        // parpadeo al soltar una tarjeta arrastrada.
+        const wasSame = sameToUser(POIS[idx], payload.new);
+        POIS[idx] = payload.new;
+        if (wasSame) return;
       } else if (payload.eventType === 'DELETE'){
+        if (!POIS.find(p=>p.id===payload.old.id)) return;
         POIS = POIS.filter(p=>p.id!==payload.old.id);
       }
       renderDays(); renderMap(); renderBudget();
