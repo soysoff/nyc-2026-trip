@@ -495,7 +495,7 @@ nav.tabbar{
       <div class="filter-bar" id="filter-kind">
         <button class="filter-chip active" data-kind="all">Todos</button>
         <button class="filter-chip" data-kind="tour">🗼 Turismo</button>
-        <button class="filter-chip" data-kind="food">🍽️ Comida</button>
+        <button class="filter-chip" data-kind="food" hidden>🍽️ Comida</button>
       </div>
       <div id="route-summary"></div>
       <div id="leaflet-map"></div>
@@ -563,11 +563,6 @@ nav.tabbar{
                 <option value="show">🎟️ Show / Evento</option>
                 <option value="transit">⛴️ Transporte / Ferry</option>
               </optgroup>
-              <optgroup label="Comida">
-                <option value="restaurant">🍽️ Restaurante</option>
-                <option value="bakery">🧁 Bakery / Postre</option>
-                <option value="streetfood">🥡 Callejera / Casual</option>
-              </optgroup>
             </select>
           </div>
         </div>
@@ -630,6 +625,11 @@ const MEMBERS = [
   {name:'Tefa', color:'#2E9E5B'}, {name:'Ale', color:'#FF8A3D'},
   {name:'Dinhora', color:'#3B55E8'}, {name:'Luis', color:'#E8559B'},
 ];
+
+// Pedido de la familia (sep 2026): ocultar comida de la app por ahora.
+// Los puntos siguen en la base — poner esto en false los vuelve a mostrar.
+const HIDE_FOOD = true;
+const visiblePois = () => HIDE_FOOD ? POIS.filter(p => (CATEGORY_META[p.category]||{}).kind !== 'food') : POIS;
 
 let POIS = [];
 let ACTIVITY = [];
@@ -820,7 +820,7 @@ let freshTimer = null;
 function renderDays(){
   // No re-dibujar mientras alguien arrastra: destruiría la tarjeta en movimiento.
   if (isDragging){ renderQueued = true; return; }
-  const g = groupByDay(POIS);
+  const g = groupByDay(visiblePois());
   const days = DAY_ORDER.filter(d => g[d] && g[d].length);
   daysCache = days;
   if (!days.length) return;
@@ -1133,7 +1133,7 @@ function renderMap(){
   // numeración de los pines y el trazo de la ruta, sin que el filtro de
   // categoría altere los números.
   const dayRoute = dayMode
-    ? POIS.filter(p => p.day === activeDayFilter && p.lat != null && p.lon != null)
+    ? visiblePois().filter(p => p.day === activeDayFilter && p.lat != null && p.lon != null)
           .sort((a,b) => a.order_index - b.order_index)
     : [];
 
@@ -1153,7 +1153,7 @@ function renderMap(){
   }
 
   const pts = [];
-  for (const p of POIS){
+  for (const p of visiblePois()){
     if (p.lat === null || p.lon === null) continue;
     if (activeDayFilter !== 'all' && p.day !== activeDayFilter) continue;
     const cat = CATEGORY_META[p.category] || CATEGORY_META.landmark;
@@ -1186,16 +1186,17 @@ function renderMap(){
 function renderBudget(){
   const el = document.getElementById('view-budget');
   // Los costos del itinerario están capturados por persona (así venían en el sheet original).
-  const perPerson = POIS.reduce((s,p)=>s + (Number(p.cost)||0), 0);
+  const visible = visiblePois();
+  const perPerson = visible.reduce((s,p)=>s + (Number(p.cost)||0), 0);
   const total = perPerson * MEMBERS.length;
-  const g = groupByDay(POIS);
+  const g = groupByDay(visible);
   const dayRows = DAY_ORDER.filter(d=>g[d]).map(d => {
     const sum = g[d].reduce((s,p)=>s+(Number(p.cost)||0),0);
     return {day:d, sum};
   });
   const maxDay = Math.max(1, ...dayRows.map(r=>r.sum));
-  const tourSum = POIS.filter(p=>(CATEGORY_META[p.category]||{}).kind==='tour').reduce((s,p)=>s+(Number(p.cost)||0),0);
-  const foodSum = POIS.filter(p=>(CATEGORY_META[p.category]||{}).kind==='food').reduce((s,p)=>s+(Number(p.cost)||0),0);
+  const tourSum = visible.filter(p=>(CATEGORY_META[p.category]||{}).kind==='tour').reduce((s,p)=>s+(Number(p.cost)||0),0);
+  const foodSum = visible.filter(p=>(CATEGORY_META[p.category]||{}).kind==='food').reduce((s,p)=>s+(Number(p.cost)||0),0);
   const splitTotal = Math.max(1, tourSum+foodSum);
 
   el.innerHTML = `
@@ -1210,11 +1211,12 @@ function renderBudget(){
         <div class="bar-track"><div class="bar-fill" style="width:${(r.sum/maxDay*100).toFixed(0)}%;"></div></div>
         <div class="bar-val mono-num">${money(r.sum)}</div>
       </div>`).join('')}
+    ${HIDE_FOOD ? '' : `
     <div class="section-title">Turismo vs Comida · por persona</div>
     <div class="split-bar">
       <div style="width:${(tourSum/splitTotal*100).toFixed(0)}%; background:var(--blue);">${tourSum>0?money(tourSum):''}</div>
       <div style="width:${(foodSum/splitTotal*100).toFixed(0)}%; background:var(--orange);">${foodSum>0?money(foodSum):''}</div>
-    </div>
+    </div>`}
     <div class="transport-note">🚕 <b>Transporte:</b> aún no tienen esos costos/horarios — el campo está listo en cada punto para llenarlo cuando lo sepan. No se incluye en el total todavía.</div>
   `;
 }
