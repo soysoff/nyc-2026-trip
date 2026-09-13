@@ -160,6 +160,14 @@ nav.tabbar{
   touch-action:pan-x; scrollbar-width:none;
 }
 .day-strip::-webkit-scrollbar{display:none;}
+.day-strip-wrap{display:flex; align-items:center; gap:8px; padding:0 10px;}
+.day-strip-wrap .day-strip{flex:1; padding:8px 6px 10px;}
+.viewall-btn{
+  flex-shrink:0; margin-bottom:8px; padding:8px 12px; border-radius:14px; border:none;
+  background:var(--paper); color:var(--ink); font-size:11.5px; font-weight:800; cursor:pointer;
+  white-space:nowrap; box-shadow:0 1px 2px rgba(23,20,22,.05);
+}
+.viewall-btn.active{background:var(--ink); color:#fff;}
 .day-pill{
   flex-shrink:0; min-width:42px; padding:7px 10px; border-radius:14px; background:var(--paper); border:none;
   color:var(--ink-soft); font-size:12px; font-weight:800; cursor:pointer; text-align:center;
@@ -177,6 +185,15 @@ nav.tabbar{
   padding:6px 16px calc(16px + var(--tabbar-space));
   overscroll-behavior-y:contain;
 }
+.day-pager.show-all{
+  flex-direction:column; overflow-x:hidden; overflow-y:auto; scroll-snap-type:none;
+}
+.day-pager.show-all .day-page{
+  flex:0 0 auto; scroll-snap-align:none; height:auto; overflow-y:visible;
+  padding:6px 16px 20px; border-bottom:1px solid rgba(23,20,22,.08);
+}
+.day-pager.show-all .day-page:last-child{border-bottom:none; padding-bottom:calc(16px + var(--tabbar-space));}
+.day-page-title{font-size:15px; font-weight:800; color:var(--ink); width:100%;}
 .day-page-head{
   display:flex; align-items:center; justify-content:space-between; gap:8px;
   margin:2px 2px 12px; flex-wrap:wrap;
@@ -328,6 +345,10 @@ nav.tabbar{
   background:var(--ink); color:#fff; font-size:10px; font-weight:800;
   display:flex; align-items:center; justify-content:center;
   border:2px solid #fff; box-shadow:0 1px 3px rgba(23,20,22,.3);
+}
+.pin-home{
+  width:34px; height:34px; font-size:17px; background:var(--ink);
+  border-color:#F0AE2E; border-width:3px;
 }
 .pin.done{opacity:.4;}
 .leaflet-popup-content-wrapper{background:var(--paper); color:var(--ink); border-radius:16px; box-shadow:0 12px 30px rgba(23,20,22,.2);}
@@ -507,7 +528,10 @@ nav.tabbar{
         <div class="day-title" id="day-title"></div>
         <button class="day-nav-btn" id="day-next" aria-label="Día siguiente">›</button>
       </div>
-      <div class="day-strip" id="day-strip"></div>
+      <div class="day-strip-wrap">
+        <div class="day-strip" id="day-strip"></div>
+        <button class="viewall-btn" id="viewall-toggle" title="Ver todos los días en una sola lista">📋 Ver todo</button>
+      </div>
       <div class="day-pager" id="day-pager"></div>
     </section>
 
@@ -625,6 +649,16 @@ const MEMBERS = [
   {name:'Tefa', color:'#2E9E5B'}, {name:'Ale', color:'#FF8A3D'},
   {name:'Dinhora', color:'#3B55E8'}, {name:'Luis', color:'#E8559B'},
 ];
+
+// Casa de la prima (base del viaje, Garden City South, Long Island — no es
+// una actividad de ningún día, sólo referencia fija en el mapa).
+// Coordenada de US Census Bureau TIGER geocoder (rango 185-299 Nassau Blvd).
+const HOME = {
+  name: 'Casa (Garden City South)',
+  address: '195 Nassau Blvd Apt. B, Garden City South, NY 11530',
+  lat: 40.7321263,
+  lon: -73.6606606,
+};
 
 // Pedido de la familia (sep 2026): ocultar comida de la app por ahora.
 // Los puntos siguen en la base — poner esto en false los vuelve a mostrar.
@@ -816,6 +850,7 @@ let isDragging = false;
 let renderQueued = false;
 let animateNextRender = true;   // sólo la primera carga entra animada
 let freshTimer = null;
+let showAllDays = false;        // toggle "ver todo": lista vertical con todos los días
 
 function renderDays(){
   // No re-dibujar mientras alguien arrastra: destruiría la tarjeta en movimiento.
@@ -826,23 +861,29 @@ function renderDays(){
   if (!days.length) return;
   if (!currentDayKey || !days.includes(currentDayKey)) currentDayKey = days[0];
 
+  document.querySelector('.day-switcher').style.display = showAllDays ? 'none' : 'flex';
+
   const strip = document.getElementById('day-strip');
   strip.innerHTML = days.map(d => {
     const short = d === 'tbd' ? '?' : (d === '2026-09-23' ? '23' : new Date(d+'T12:00:00').getDate());
-    return `<button class="day-pill ${d===currentDayKey?'active':''}" data-day="${d}">${short}</button>`;
+    return `<button class="day-pill ${!showAllDays && d===currentDayKey?'active':''}" data-day="${d}">${short}</button>`;
   }).join('');
   strip.querySelectorAll('.day-pill').forEach(b => b.addEventListener('click', () => scrollToDay(b.dataset.day, true)));
 
   const pager = document.getElementById('day-pager');
-  // Conserva el scroll vertical del día visible entre re-renders (ej. al marcar visitado).
-  const prevPage = pager.querySelector(`.day-page[data-day="${currentDayKey}"]`);
+  pager.classList.toggle('show-all', showAllDays);
+  // Conserva el scroll entre re-renders (ej. al marcar visitado): vertical del
+  // día visible en modo por-día, del pager entero en modo "ver todo".
+  const prevPage = !showAllDays ? pager.querySelector(`.day-page[data-day="${currentDayKey}"]`) : null;
   const prevScroll = prevPage ? prevPage.scrollTop : 0;
+  const prevPagerScroll = showAllDays ? pager.scrollTop : 0;
 
   pager.innerHTML = days.map(day => {
     const items = g[day];
     const zones = [...new Set(items.map(p=>p.zone).filter(z=>z && z!=='—'))].slice(0,3).join(' · ');
     return `<div class="day-page" data-day="${day}">
       <div class="day-page-head">
+        ${showAllDays ? `<span class="day-page-title">${dayLabel(day)}</span>` : ''}
         ${zones ? `<span class="day-page-zone">📍 ${esc(zones)}</span>` : ''}
         <span class="day-walk" data-day="${day}"></span>
       </div>
@@ -850,8 +891,12 @@ function renderDays(){
     </div>`;
   }).join('');
 
-  const newPage = pager.querySelector(`.day-page[data-day="${currentDayKey}"]`);
-  if (newPage && prevScroll) newPage.scrollTop = prevScroll;
+  if (showAllDays){
+    pager.scrollTop = prevPagerScroll;
+  } else {
+    const newPage = pager.querySelector(`.day-page[data-day="${currentDayKey}"]`);
+    if (newPage && prevScroll) newPage.scrollTop = prevScroll;
+  }
 
   if (animateNextRender){
     animateNextRender = false;
@@ -874,23 +919,27 @@ function renderDays(){
 
   updateDayTitle();
   sizeDayPager();
-  scrollToDay(currentDayKey, false);
+  if (!showAllDays) scrollToDay(currentDayKey, false);
 }
 
 function updateDayTitle(){
-  const g = groupByDay(POIS);
+  const g = groupByDay(visiblePois());
   const items = g[currentDayKey] || [];
   const zones = [...new Set(items.map(p=>p.zone).filter(z=>z && z!=='—'))].slice(0,3).join(' · ');
   document.getElementById('day-title').innerHTML =
     `${dayLabel(currentDayKey)}${zones ? `<span class="d-zone">${esc(zones)}</span>` : ''}`;
-  document.querySelectorAll('.day-pill').forEach(b => b.classList.toggle('active', b.dataset.day === currentDayKey));
+  document.querySelectorAll('.day-pill').forEach(b => b.classList.toggle('active', !showAllDays && b.dataset.day === currentDayKey));
 }
 
 function scrollToDay(day, smooth){
   const pager = document.getElementById('day-pager');
   const page = pager.querySelector(`.day-page[data-day="${day}"]`);
   if (!page) return;
-  pager.scrollTo({left: page.offsetLeft, behavior: smooth ? 'smooth' : 'auto'});
+  if (showAllDays){
+    page.scrollIntoView({behavior: smooth ? 'smooth' : 'auto', block:'start'});
+  } else {
+    pager.scrollTo({left: page.offsetLeft, behavior: smooth ? 'smooth' : 'auto'});
+  }
   currentDayKey = day;
   updateDayTitle();
 }
@@ -905,6 +954,7 @@ window.addEventListener('resize', sizeDayPager);
 
 let pagerScrollTimer = null;
 document.getElementById('day-pager').addEventListener('scroll', () => {
+  if (showAllDays) return;   // en "ver todo" el scroll es vertical, no indica cambio de día
   clearTimeout(pagerScrollTimer);
   pagerScrollTimer = setTimeout(() => {
     const pager = document.getElementById('day-pager');
@@ -920,6 +970,13 @@ document.getElementById('day-prev').addEventListener('click', () => {
 document.getElementById('day-next').addEventListener('click', () => {
   const idx = daysCache.indexOf(currentDayKey);
   if (idx >= 0 && idx < daysCache.length-1) scrollToDay(daysCache[idx+1], true);
+});
+document.getElementById('viewall-toggle').addEventListener('click', () => {
+  showAllDays = !showAllDays;
+  const btn = document.getElementById('viewall-toggle');
+  btn.classList.toggle('active', showAllDays);
+  btn.textContent = showAllDays ? '📅 Ver por día' : '📋 Ver todo';
+  renderDays();
 });
 
 // Dibuja los tramos entre tarjetas consecutivas. Se recalcula tras reordenar,
@@ -1179,6 +1236,22 @@ function renderMap(){
     });
     pts.push([p.lat, p.lon]);
   }
+
+  // Casa: referencia fija de todo el viaje, visible siempre sin importar
+  // filtros de día/categoría. No entra en fitBounds para no alejar el zoom
+  // del día seleccionado (queda muy lejos de Manhattan).
+  const homeIcon = L.divIcon({
+    html:`<div class="pin pin-home">🏠</div>`,
+    className:'', iconSize:[34,34], iconAnchor:[17,17], popupAnchor:[0,-17]
+  });
+  L.marker([HOME.lat, HOME.lon], {icon:homeIcon, zIndexOffset:1000}).addTo(pinLayer).bindPopup(`
+    <div class="popup-title">🏠 ${esc(HOME.name)}</div>
+    <div class="popup-meta">${esc(HOME.address)}</div>
+    <div class="popup-actions">
+      <a class="popup-maps" href="${mapsUrl(HOME)}" target="_blank" rel="noopener">🧭 Cómo llegar</a>
+    </div>
+  `);
+
   if (activeDayFilter !== 'all' && pts.length) map.fitBounds(pts, {padding:[40,40], maxZoom:15});
 }
 
