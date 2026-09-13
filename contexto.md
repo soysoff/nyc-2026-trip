@@ -193,7 +193,7 @@ Para tocar la base de datos se usan las herramientas MCP de Supabase (`execute_s
 ### Decisiones de la familia (no son trabajo de código)
 - **Transporte:** llenar costos y horarios cuando se sepan. Los campos ya existen en cada tarjeta y son editables por cualquiera; hoy no suman al total.
 - **Tranvía de Roosevelt Island:** venía incompleto en el sheet, está en el bucket "Por confirmar".
-- **Estatua de la Libertad:** decidir entre Staten Island Ferry (gratis, el barco naranja) o Castle Clinton ($25).
+- **Estatua de la Libertad — resuelto (12 sep 2026):** van con el Staten Island Ferry gratis (el barco naranja). Se descartó Castle Clinton ($25); ese punto quedó oculto en la app (`hidden=true`) pero sigue en la base por si cambian de opinión. Importante tenerlo en cuenta: el ferry no llega a Liberty Island, solo pasa cerca — si quieren pisar la isla hay que evaluar el ferry oficial de Statue Cruises (pago).
 - **Orden del 20 de sep:** suma ~6 km zigzagueando por el Financial District aunque todo está cerca. Ahora que los tramos se ven, conviene reordenarlo arrastrando para acortarlo.
 
 ### Ideas opcionales
