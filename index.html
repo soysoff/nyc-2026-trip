@@ -516,7 +516,7 @@ nav.tabbar{
       <div class="filter-bar" id="filter-kind">
         <button class="filter-chip active" data-kind="all">Todos</button>
         <button class="filter-chip" data-kind="tour">🗼 Turismo</button>
-        <button class="filter-chip" data-kind="food" hidden>🍽️ Comida</button>
+        <button class="filter-chip" data-kind="food">🍽️ Comida</button>
       </div>
       <div id="route-summary"></div>
       <div id="leaflet-map"></div>
@@ -586,6 +586,11 @@ nav.tabbar{
                 <option value="shopping">🛍️ Shopping</option>
                 <option value="show">🎟️ Show / Evento</option>
                 <option value="transit">⛴️ Transporte / Ferry</option>
+              </optgroup>
+              <optgroup label="Comida">
+                <option value="restaurant">🍽️ Restaurante</option>
+                <option value="bakery">🧁 Bakery / Postre</option>
+                <option value="streetfood">🥡 Callejera / Casual</option>
               </optgroup>
             </select>
           </div>
@@ -660,10 +665,10 @@ const HOME = {
   lon: -73.6606606,
 };
 
-// Pedido de la familia (sep 2026): ocultar comida de la app por ahora.
-// Los puntos siguen en la base — poner esto en false los vuelve a mostrar.
-const HIDE_FOOD = true;
-const visiblePois = () => HIDE_FOOD ? POIS.filter(p => (CATEGORY_META[p.category]||{}).kind !== 'food') : POIS;
+// Cada punto de comida se muestra u oculta individualmente (columna `hidden`
+// en la base) — así se van sumando restaurantes uno por uno a medida que la
+// familia los confirma, en vez de mostrar/ocultar todos de golpe.
+const visiblePois = () => POIS.filter(p => !p.hidden);
 
 let POIS = [];
 let ACTIVITY = [];
@@ -1284,12 +1289,12 @@ function renderBudget(){
         <div class="bar-track"><div class="bar-fill" style="width:${(r.sum/maxDay*100).toFixed(0)}%;"></div></div>
         <div class="bar-val mono-num">${money(r.sum)}</div>
       </div>`).join('')}
-    ${HIDE_FOOD ? '' : `
+    ${foodSum > 0 ? `
     <div class="section-title">Turismo vs Comida · por persona</div>
     <div class="split-bar">
       <div style="width:${(tourSum/splitTotal*100).toFixed(0)}%; background:var(--blue);">${tourSum>0?money(tourSum):''}</div>
       <div style="width:${(foodSum/splitTotal*100).toFixed(0)}%; background:var(--orange);">${foodSum>0?money(foodSum):''}</div>
-    </div>`}
+    </div>` : ''}
     <div class="transport-note">🚕 <b>Transporte:</b> aún no tienen esos costos/horarios — el campo está listo en cada punto para llenarlo cuando lo sepan. No se incluye en el total todavía.</div>
   `;
 }
