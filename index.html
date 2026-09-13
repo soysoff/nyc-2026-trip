@@ -665,6 +665,10 @@ const HOME = {
   lon: -73.6606606,
 };
 
+// Pedido de la familia (sep 2026): no mostrar precios todavía mientras
+// terminan de definir el itinerario. Los costos siguen en la base.
+const SHOW_PRICES = false;
+
 // Cada punto de comida se muestra u oculta individualmente (columna `hidden`
 // en la base) — así se van sumando restaurantes uno por uno a medida que la
 // familia los confirma, en vez de mostrar/ocultar todos de golpe.
@@ -816,7 +820,7 @@ function poiCardHtml(p, i){
   const cat = CATEGORY_META[p.category] || CATEGORY_META.landmark;
   // Entrada escalonada: sólo las primeras tarjetas, para que no se sienta lento.
   const delay = (typeof i === 'number' && i < 8) ? `animation-delay:${(i*45)}ms;` : '';
-  const costChip = p.cost !== null && p.cost !== undefined ? `<span class="chip cost">${p.cost==0?'Gratis':money(p.cost)+' /persona'}</span>` : '';
+  const costChip = (SHOW_PRICES && p.cost !== null && p.cost !== undefined) ? `<span class="chip cost">${p.cost==0?'Gratis':money(p.cost)+' /persona'}</span>` : '';
   const schedChip = p.schedule ? `<span class="chip">🕐 ${esc(p.schedule)}</span>` : '';
   const zoneChip = p.zone && p.zone !== '—' ? `<span class="chip">📍 ${esc(p.zone)}</span>` : '';
   const addedChip = p.added_by ? `<span class="chip added">+ ${esc(p.added_by)}</span>` : '';
@@ -1227,10 +1231,11 @@ function renderMap(){
       className:'', iconSize:[30,30], iconAnchor:[15,15], popupAnchor:[0,-15]
     });
     const marker = L.marker([p.lat, p.lon], {icon}).addTo(pinLayer);
-    const costTxt = p.cost !== null && p.cost !== undefined ? (p.cost==0?'Gratis':money(p.cost)+' /persona') : '';
+    const costTxt = (SHOW_PRICES && p.cost !== null && p.cost !== undefined) ? (p.cost==0?'Gratis':money(p.cost)+' /persona') : '';
+    const metaParts = [esc(dayLabel(p.day)), costTxt, p.schedule ? esc(p.schedule) : ''].filter(Boolean);
     marker.bindPopup(`
       <div class="popup-title">${cat.emoji} ${esc(p.name)}</div>
-      <div class="popup-meta">${esc(dayLabel(p.day))} · ${costTxt} ${p.schedule?(' · '+esc(p.schedule)):''}</div>
+      <div class="popup-meta">${metaParts.join(' · ')}</div>
       <div class="popup-actions">
         <button class="popup-done ${p.is_done?'on':''}" data-id="${p.id}">${p.is_done?'✓ Visitado':'Marcar visitado'}</button>
         <a class="popup-maps" href="${mapsUrl(p)}" target="_blank" rel="noopener">🧭 Cómo llegar</a>
@@ -1263,6 +1268,10 @@ function renderMap(){
 /* ---------------- budget ---------------- */
 function renderBudget(){
   const el = document.getElementById('view-budget');
+  if (!SHOW_PRICES){
+    el.innerHTML = `<div class="transport-note" style="margin-top:16px;">💸 Los precios están ocultos por ahora mientras terminan de definir el itinerario. Siguen guardados — cuando estén listos para verlos, avisen.</div>`;
+    return;
+  }
   // Los costos del itinerario están capturados por persona (así venían en el sheet original).
   const visible = visiblePois();
   const perPerson = visible.reduce((s,p)=>s + (Number(p.cost)||0), 0);
