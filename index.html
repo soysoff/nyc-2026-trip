@@ -650,6 +650,9 @@ nav.tabbar{
 const SUPABASE_URL = "https://ppeiyhgwrbrisnvxyyyc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBwZWl5aGd3cmJyaXNudnh5eXljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwMDQ4MjksImV4cCI6MjEwMjU4MDgyOX0.ze-vEzIFeMoUEsBtS8_WGD2u_VjOeIbaCGUerwsPtCw";
 const VAPID_PUBLIC_KEY = "BF3YAws4sEeGM77h7Bhq5k2MScUVCnK27Do6L_5C3a4od15Iaeu5mxjIVmIIAw6FJr_oN-dw_Qhx90EP7QNAgnY";
+// CARTO empezó a exigir key para sus basemaps gratis (ago 2026). Restringida
+// por Referer a nyc-2026-trip.vercel.app y soysoff.github.io en el dashboard de CARTO.
+const CARTO_API_KEY = "cb1_3iut_1_8f7eb434554ce5df8e634ae7";
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -1186,7 +1189,7 @@ window.addEventListener('resize', sizeMap);
 
 function initMap(){
   map = L.map('leaflet-map', {zoomControl:true}).setView([40.735,-73.99], 12.3);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  L.tileLayer(`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`, {
     maxZoom:19, attribution:'© OpenStreetMap © CARTO', subdomains:'abcd'
   }).addTo(map);
   pinLayer = L.layerGroup().addTo(map);
