@@ -429,6 +429,27 @@ nav.tabbar{
 .two-col{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
 #mini-map{height:160px; border-radius:16px; margin-top:6px;}
 .mini-map-hint{font-size:11px; color:var(--ink-soft); margin-top:6px; font-weight:600;}
+.place-suggestions{
+  position:absolute; left:0; right:0; top:100%; margin-top:4px; z-index:20;
+  background:var(--paper); border-radius:14px; box-shadow:0 6px 20px rgba(23,20,22,.18);
+  overflow:hidden; max-height:220px; overflow-y:auto;
+}
+.place-suggestions.hidden{display:none;}
+.place-suggestion{
+  display:block; width:100%; text-align:left; border:none; background:none; cursor:pointer;
+  padding:10px 13px; font-family:inherit; border-bottom:1px solid rgba(23,20,22,.06);
+}
+.place-suggestion:last-child{border-bottom:none;}
+.place-suggestion:hover, .place-suggestion:active{background:var(--bg);}
+.place-suggestion .ps-name{font-size:13px; font-weight:800; color:var(--ink); display:block;}
+.place-suggestion .ps-addr{font-size:11px; color:var(--ink-soft); display:block; margin-top:1px;}
+.zone-hint{font-size:11px; color:var(--ink-soft); margin-top:6px; font-weight:600;}
+.zone-hint:empty{display:none;}
+.auto-tag{
+  font-size:10px; font-weight:800; color:var(--blue); background:rgba(59,85,232,.1);
+  padding:2px 7px; border-radius:999px; margin-left:5px; vertical-align:middle;
+}
+.auto-tag.hidden{display:none;}
 .btn-primary{
   width:100%; padding:15px; border-radius:16px; border:none; margin-top:8px;
   background:var(--ink); color:#fff; font-weight:800; font-size:14.5px;
@@ -544,7 +565,11 @@ nav.tabbar{
     <section id="view-budget" class="view"></section>
   </main>
 
-  <button class="fab" id="btn-fab">+</button>
+  <button class="fab" id="btn-fab" aria-label="Agregar punto">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>
+  </button>
 
   <nav class="tabbar">
     <button class="tab-btn" data-view="view-map"><span class="ic">🗺️</span><span class="lbl">Mapa</span></button>
@@ -573,13 +598,15 @@ nav.tabbar{
         <button type="button" class="sheet-close" id="btn-close-add" aria-label="Cerrar">✕</button>
       </div>
       <form id="add-form">
-        <div class="field">
+        <div class="field" style="position:relative;">
           <label>Nombre</label>
-          <input type="text" id="f-name" required placeholder="Ej. Levain Bakery" />
+          <input type="text" id="f-name" required placeholder="Ej. tienda Salomon, Levain Bakery..." autocomplete="off" />
+          <div id="place-suggestions" class="place-suggestions hidden"></div>
+          <div class="zone-hint" id="zone-hint"></div>
         </div>
         <div class="two-col">
           <div class="field">
-            <label>Día</label>
+            <label>Día <span id="day-auto-tag" class="auto-tag hidden">sugerido</span></label>
             <select id="f-day"></select>
           </div>
           <div class="field">
@@ -610,11 +637,6 @@ nav.tabbar{
             <label>Horario (opcional)</label>
             <input type="text" id="f-schedule" placeholder="Ej. 10am–6pm" />
           </div>
-        </div>
-        <div class="field">
-          <label>Zona</label>
-          <input type="text" id="f-zone" list="zone-list" placeholder="Ej. Midtown" />
-          <datalist id="zone-list"></datalist>
         </div>
         <div class="field">
           <label>Notas (opcional)</label>
@@ -1300,26 +1322,131 @@ function renderBudget(){
 }
 
 /* ---------------- add modal ---------------- */
+// Zona y día se detectan solos a partir de dónde quedó el pin (búsqueda o
+// clic en el mini-mapa) — no hay campo manual, ver pedido de la familia.
+let addZone = '—';
+
+function suggestDayForLocation(lat, lon){
+  // Día cuyo plan actual (promedio de sus puntos con coordenadas) está
+  // geográficamente más cerca del lugar nuevo.
+  let bestDay = null, bestDist = Infinity;
+  for (const day of DAY_ORDER){
+    const items = POIS.filter(p => p.day === day && p.lat != null && p.lon != null && !p.hidden);
+    if (!items.length) continue;
+    const clat = items.reduce((s,p)=>s+p.lat,0) / items.length;
+    const clon = items.reduce((s,p)=>s+p.lon,0) / items.length;
+    const d = haversine(lat, lon, clat, clon);
+    if (d < bestDist){ bestDist = d; bestDay = day; }
+  }
+  return bestDay;
+}
+
+function zoneFromAddress(addr){
+  if (!addr) return '—';
+  return addr.neighbourhood || addr.suburb || addr.quarter || addr.city_district
+      || addr.town || addr.village || addr.city || '—';
+}
+
+function applyDetectedLocation(lat, lon, zone){
+  addZone = zone || '—';
+  document.getElementById('zone-hint').textContent = addZone !== '—' ? `📍 Zona detectada: ${addZone}` : '';
+  const suggested = suggestDayForLocation(lat, lon);
+  const tag = document.getElementById('day-auto-tag');
+  if (suggested){
+    document.getElementById('f-day').value = suggested;
+    tag.classList.remove('hidden');
+  } else {
+    tag.classList.add('hidden');
+  }
+}
+
+async function reverseGeocode(lat, lon){
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1&zoom=16`);
+    const data = await res.json();
+    return zoneFromAddress(data.address);
+  } catch (err){
+    console.error('Reverse geocode falló:', err);
+    return '—';
+  }
+}
+
+let placeSearchTimer = null, placeSearchSeq = 0, lastSearchResults = [];
+document.getElementById('f-name').addEventListener('input', (e) => {
+  const q = e.target.value.trim();
+  const box = document.getElementById('place-suggestions');
+  clearTimeout(placeSearchTimer);
+  if (q.length < 3){ box.classList.add('hidden'); box.innerHTML = ''; return; }
+  placeSearchTimer = setTimeout(() => searchPlaces(q), 450);
+});
+document.addEventListener('click', (e) => {
+  const box = document.getElementById('place-suggestions');
+  if (e.target.id !== 'f-name' && !box.contains(e.target)) box.classList.add('hidden');
+});
+
+async function searchPlaces(q){
+  const seq = ++placeSearchSeq;
+  const box = document.getElementById('place-suggestions');
+  try {
+    // Sesgado a NYC + Long Island (viewbox), sin excluir el resto del mundo.
+    const viewbox = '-74.35,40.40,-73.55,41.05';
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&viewbox=${viewbox}&q=${encodeURIComponent(q)}`;
+    const res = await fetch(url);
+    const results = await res.json();
+    if (seq !== placeSearchSeq) return; // ya hay una búsqueda más nueva en curso
+    lastSearchResults = results;
+    if (!results.length){ box.classList.add('hidden'); box.innerHTML = ''; return; }
+    box.innerHTML = results.map((r,i) => `
+      <button type="button" class="place-suggestion" data-i="${i}">
+        <span class="ps-name">${esc((r.namedetails && r.namedetails.name) || r.display_name.split(',')[0])}</span>
+        <span class="ps-addr">${esc(r.display_name)}</span>
+      </button>`).join('');
+    box.classList.remove('hidden');
+    box.querySelectorAll('.place-suggestion').forEach(btn => {
+      btn.addEventListener('click', () => selectPlace(lastSearchResults[Number(btn.dataset.i)]));
+    });
+  } catch (err){
+    console.error('Búsqueda de lugares falló:', err);
+  }
+}
+
+function selectPlace(r){
+  document.getElementById('f-name').value = (r.namedetails && r.namedetails.name) || r.display_name.split(',')[0];
+  document.getElementById('place-suggestions').classList.add('hidden');
+  const lat = Number(r.lat), lon = Number(r.lon);
+  if (miniMarker) miniMap.removeLayer(miniMarker);
+  miniMarker = L.marker([lat, lon]).addTo(miniMap);
+  miniMap.setView([lat, lon], 15);
+  document.getElementById('mini-map-hint').textContent = `📍 ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  applyDetectedLocation(lat, lon, zoneFromAddress(r.address));
+}
+
 function openAddModal(){
   if (!requireIdentity()) return;
   const daySel = document.getElementById('f-day');
   daySel.innerHTML = DAY_ORDER.map(d=>`<option value="${d}">${dayLabel(d)}</option>`).join('');
-  const zones = [...new Set(POIS.map(p=>p.zone).filter(z=>z && z!=='—'))];
-  document.getElementById('zone-list').innerHTML = zones.map(z=>`<option value="${esc(z)}">`).join('');
   document.getElementById('add-form').reset();
   if (currentDayKey) daySel.value = currentDayKey;
+  addZone = '—';
+  document.getElementById('zone-hint').textContent = '';
+  document.getElementById('day-auto-tag').classList.add('hidden');
+  document.getElementById('place-suggestions').classList.add('hidden');
   miniMarker = null;
-  document.getElementById('mini-map-hint').textContent = 'Toca el mapa para marcar el lugar.';
+  document.getElementById('mini-map-hint').textContent = 'Buscá arriba o tocá el mapa para marcar el lugar.';
   document.getElementById('add-overlay').classList.remove('hidden');
   setTimeout(() => {
     if (!miniMap){
       miniMap = L.map('mini-map', {zoomControl:false}).setView([40.735,-73.99], 11.5);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(miniMap);
-      miniMap.on('click', (e) => {
+      miniMap.on('click', async (e) => {
         if (miniMarker) miniMap.removeLayer(miniMarker);
         miniMarker = L.marker(e.latlng).addTo(miniMap);
         document.getElementById('mini-map-hint').textContent = `📍 ${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`;
+        const zone = await reverseGeocode(e.latlng.lat, e.latlng.lng);
+        applyDetectedLocation(e.latlng.lat, e.latlng.lng, zone);
       });
+    } else {
+      miniMap.setView([40.735,-73.99], 11.5);
     }
     miniMap.invalidateSize();
   }, 60);
@@ -1336,7 +1463,7 @@ document.getElementById('add-form').addEventListener('submit', async (e) => {
   const name = document.getElementById('f-name').value.trim();
   const costRaw = document.getElementById('f-cost').value;
   const schedule = document.getElementById('f-schedule').value.trim() || null;
-  const zone = document.getElementById('f-zone').value.trim() || '—';
+  const zone = addZone;
   const notes = document.getElementById('f-notes').value.trim() || null;
   if (!name) return;
   const dayItems = POIS.filter(p=>p.day===day);
