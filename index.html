@@ -145,7 +145,7 @@ nav.tabbar{
 /* ---------- days view (calendar pager) ---------- */
 #view-days{padding:0;}
 .day-switcher{
-  display:flex; align-items:center; gap:6px; padding:8px 10px 2px;
+  display:flex; align-items:center; gap:6px; padding:22px 10px 2px;
 }
 .day-nav-btn{
   width:38px;height:38px;border-radius:50%; border:none; background:var(--paper); color:var(--ink);
@@ -257,18 +257,6 @@ nav.tabbar{
 }
 .chip.cost{color:var(--green);}
 .chip.added{color:var(--violet);}
-.poi-note{
-  margin-top:8px; font-size:12.5px; color:var(--ink-soft); background:var(--bg); border:none; border-radius:10px;
-  width:100%; padding:7px 10px; font-family:inherit; resize:none;
-}
-.poi-note:focus{outline:2px solid var(--blue); outline-offset:1px;}
-.transport-row{margin-top:7px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;}
-.transport-row input{
-  background:var(--bg); border:none; border-radius:9px; color:var(--ink);
-  font-size:11.5px; padding:6px 8px; font-family:inherit; width:96px; font-weight:600;
-}
-.transport-row input:focus{outline:2px solid var(--blue);}
-.transport-label{font-size:10.5px; color:var(--ink-soft); font-weight:700;}
 .poi-actions{display:flex; flex-direction:column; gap:6px; align-items:center;}
 .done-btn{
   width:32px;height:32px;border-radius:50%; border:none; background:var(--bg);
@@ -845,8 +833,6 @@ function poiCardHtml(p, i){
   const schedChip = p.schedule ? `<span class="chip">🕐 ${esc(p.schedule)}</span>` : '';
   const zoneChip = p.zone && p.zone !== '—' ? `<span class="chip">📍 ${esc(p.zone)}</span>` : '';
   const addedChip = p.added_by ? `<span class="chip added">+ ${esc(p.added_by)}</span>` : '';
-  const tCost = p.transport_cost !== null && p.transport_cost !== undefined ? p.transport_cost : '';
-  const tSched = p.transport_schedule || '';
   const delBtn = p.added_by ? `<button class="del-btn" data-id="${p.id}" title="Eliminar">🗑️</button>` : '';
   const donePill = p.is_done ? `<span class="done-pill">✓ Visitado</span>` : '';
   return `
@@ -858,12 +844,6 @@ function poiCardHtml(p, i){
         <div class="poi-name">${esc(p.name)}${donePill}</div>
       </div>
       <div class="poi-meta">${costChip}${schedChip}${zoneChip}${addedChip}</div>
-      <textarea class="poi-note" data-id="${p.id}" placeholder="+ nota / comentario...">${esc(p.notes||'')}</textarea>
-      <div class="transport-row">
-        <span class="transport-label">🚕 Transporte:</span>
-        <input type="number" class="t-cost" data-id="${p.id}" placeholder="$ por def." value="${tCost}" />
-        <input type="text" class="t-sched" data-id="${p.id}" placeholder="hora / línea" value="${esc(tSched)}" />
-      </div>
     </div>
     <div class="poi-actions">
       <button class="done-btn ${p.is_done?'on':''}" data-id="${p.id}" title="Marcar visitado">✓</button>
@@ -939,9 +919,6 @@ function renderDays(){
 
   pager.querySelectorAll('.done-btn').forEach(b=>b.addEventListener('click', ()=>toggleDone(b.dataset.id)));
   pager.querySelectorAll('.del-btn').forEach(b=>b.addEventListener('click', ()=>deletePoi(b.dataset.id)));
-  pager.querySelectorAll('.poi-note').forEach(t=>t.addEventListener('change', ()=>updateField(t.dataset.id, 'notes', t.value)));
-  pager.querySelectorAll('.t-cost').forEach(i=>i.addEventListener('change', ()=>updateField(i.dataset.id, 'transport_cost', i.value===''?null:Number(i.value))));
-  pager.querySelectorAll('.t-sched').forEach(i=>i.addEventListener('change', ()=>updateField(i.dataset.id, 'transport_schedule', i.value||null)));
   pager.querySelectorAll('.poi-list').forEach(list => {
     list.querySelectorAll('.poi-card').forEach(card => makeDraggable(card, list));
     refreshLegs(list);
@@ -1155,13 +1132,6 @@ async function toggleDone(id){
     paintDone(id, !next); renderMap(); renderBudget();
     console.error('No se pudo guardar el check:', error);
   }
-}
-async function updateField(id, field, value){
-  if (!requireIdentity()) return;
-  const p = POIS.find(p=>p.id===id); if (!p) return;
-  p[field] = value; p.updated_by = CURRENT_USER;
-  if (field === 'transport_cost' || field === 'transport_schedule') renderBudget();
-  await sb.from('pois').update({[field]: value, updated_by: CURRENT_USER}).eq('id', id);
 }
 async function deletePoi(id){
   if (!requireIdentity()) return;
