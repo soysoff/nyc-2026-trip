@@ -772,12 +772,14 @@ const SHOW_PRICES = true;
 // ~$23.50/persona; el 22 sept no hay LIRR de ida (Woodbury Common queda en
 // dirección contraria) sino bus ida/vuelta ~$40 + un solo LIRR de regreso.
 const DAILY_EXTRAS = {
+  '2026-09-16': {food:64, transport:0},  // llegada — mismo estimado de comida, sin LIRR ese día
   '2026-09-17': {food:64, transport:23.5},
   '2026-09-18': {food:64, transport:23.5},
   '2026-09-19': {food:64, transport:23.5},
   '2026-09-20': {food:64, transport:23.5},
   '2026-09-21': {food:64, transport:23.5},
   '2026-09-22': {food:64, transport:53},
+  '2026-09-23': {food:30, transport:0},  // salida — día corto, solo desayuno/snack antes del vuelo
 };
 
 // Cada punto de comida se muestra u oculta individualmente (columna `hidden`
@@ -1502,7 +1504,7 @@ function renderBudget(){
       <div style="width:${(foodSum/splitTotal*100).toFixed(0)}%; background:var(--orange);">${foodSum>0?money(foodSum):''}</div>
     </div>` : ''}
 
-    <div class="transport-note">🚆 <b>Comida y transporte</b> son un estimado por día, no por punto del itinerario: LIRR casa↔Manhattan ida y vuelta (~$23,50/persona; $53 el 22 sept, que va por Woodbury Common) y comida completa comiendo afuera (~$64/persona/día). Si algún día comen en casa de la prima, este número queda por encima de lo real.</div>
+    <div class="transport-note">🚆 <b>Comida y transporte</b> son un estimado por día, no por punto del itinerario: LIRR casa↔Manhattan ida y vuelta (~$23,50/persona; $53 el 22 sept, que va por Woodbury Common) y comida completa comiendo afuera (~$64/persona/día; $30 el 23 sept, día corto de salida). El 16 y el 23 no llevan LIRR — el traslado al/desde el aeropuerto es aparte. Si algún día comen en casa de la prima, este número queda por encima de lo real.</div>
     <div class="transport-note" style="background:#EFE9FB;">🎟️ <b>Aladdin</b> ya está pagado — no está incluido en este total.</div>
   `;
 }
