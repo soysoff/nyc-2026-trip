@@ -785,6 +785,7 @@ function mapsUrl(p){
 const GRID_FACTOR = 1.28;      // calles en rejilla, no diagonal
 const WALK_M_PER_MIN = 80;     // ~4.8 km/h
 const SUBWAY_THRESHOLD_M = 1500;
+const FAR_THRESHOLD_M = 15000; // más allá de esto ya no es "tomate el metro" (ej. Woodbury Common)
 
 function haversine(lat1, lon1, lat2, lon2){
   const R = 6371000, rad = Math.PI/180;
@@ -801,11 +802,18 @@ function legBetween(a, b){
   const sameParkStroll = a.category === 'park' && b.category === 'park' && a.zone === b.zone;
   const straight = haversine(a.lat, a.lon, b.lat, b.lon);
   const dist = straight * (sameParkStroll ? 1.1 : GRID_FACTOR);
-  return {
-    dist,
-    mins: Math.max(1, Math.round(dist / WALK_M_PER_MIN)),
-    transit: !sameParkStroll && dist > SUBWAY_THRESHOLD_M,
-  };
+  const mins = Math.max(1, Math.round(dist / WALK_M_PER_MIN));
+  let mode = 'walk';
+  if (!sameParkStroll && dist > SUBWAY_THRESHOLD_M){
+    // Cruzar hacia/desde algo que sólo se llega en barco (ej. Estatua de la
+    // Libertad, zona "Harbor") no es "tomar el metro". Y una distancia enorme
+    // (ej. la excursión a Woodbury Common) tampoco: ahí no sirve ni caminar
+    // ni el metro, hace falta auto/bus.
+    if (a.zone === 'Harbor' || b.zone === 'Harbor') mode = 'ferry';
+    else if (dist > FAR_THRESHOLD_M) mode = 'far';
+    else mode = 'transit';
+  }
+  return { dist, mins, mode, transit: mode !== 'walk' };
 }
 
 function fmtDist(m){ return m >= 1000 ? (m/1000).toFixed(1).replace('.',',') + ' km' : Math.round(m/10)*10 + ' m'; }
@@ -1084,7 +1092,7 @@ document.getElementById('filter-days-kind').querySelectorAll('.filter-chip').for
 function refreshLegs(listEl){
   listEl.querySelectorAll('.leg').forEach(el => el.remove());
   const cards = [...listEl.querySelectorAll('.poi-card')];
-  let totalM = 0, totalMin = 0;
+  let totalM = 0, totalMin = 0, anyNonWalk = false;
 
   cards.forEach((card, i) => {
     if (i === cards.length - 1) return;
@@ -1093,23 +1101,27 @@ function refreshLegs(listEl){
     const leg = a && b ? legBetween(a, b) : null;
     if (!leg) return;
     totalM += leg.dist; totalMin += leg.mins;
+    if (leg.mode !== 'walk') anyNonWalk = true;
 
-    const mode = leg.transit ? 'transit' : 'walking';
-    const label = leg.transit
-      ? `🚇 mejor en metro · ${fmtDist(leg.dist)}`
-      : `🚶 ~${leg.mins} min · ${fmtDist(leg.dist)}`;
+    const travelMode = leg.mode === 'walk' ? 'walking' : 'transit';
+    const label = {
+      walk: `🚶 ~${leg.mins} min · ${fmtDist(leg.dist)}`,
+      transit: `🚇 mejor en metro · ${fmtDist(leg.dist)}`,
+      ferry: `⛴️ hay que ir en ferry · ${fmtDist(leg.dist)}`,
+      far: `🚗 muy lejos (auto/bus) · ${fmtDist(leg.dist)}`,
+    }[leg.mode];
     card.insertAdjacentHTML('afterend', `
-      <li class="leg${leg.transit ? ' is-transit' : ''}">
+      <li class="leg${leg.mode !== 'walk' ? ' is-transit' : ''}">
         <span class="leg-rail"></span>
         <span class="leg-pill">${label}</span>
-        <a class="leg-go" href="${legMapsUrl(a, b, mode)}" target="_blank" rel="noopener">ver ruta</a>
+        <a class="leg-go" href="${legMapsUrl(a, b, travelMode)}" target="_blank" rel="noopener">ver ruta</a>
       </li>`);
   });
 
   const day = listEl.dataset.day;
   const badge = document.querySelector(`.day-walk[data-day="${day}"]`);
   if (badge){
-    badge.textContent = totalMin ? `🚶 ~${totalMin} min · ${fmtDist(totalM)}` : '';
+    badge.textContent = totalMin ? `${anyNonWalk ? '🚶🚇' : '🚶'} ~${totalMin} min · ${fmtDist(totalM)}` : '';
   }
 }
 
