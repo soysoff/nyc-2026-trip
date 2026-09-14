@@ -1467,9 +1467,6 @@ function renderBudget(){
     return {day:d, sum};
   });
   const maxDay = Math.max(1, ...dayRows.map(r=>r.sum));
-  const tourSum = visible.filter(p=>(CATEGORY_META[p.category]||{}).kind==='tour').reduce((s,p)=>s+(Number(p.cost)||0),0);
-  const foodSum = visible.filter(p=>(CATEGORY_META[p.category]||{}).kind==='food').reduce((s,p)=>s+(Number(p.cost)||0),0);
-  const splitTotal = Math.max(1, tourSum+foodSum);
 
   // Comida y transporte no viven en un POI — son el estimado por día de
   // DAILY_EXTRAS, sumado sobre los días del itinerario (ver la constante).
@@ -1497,12 +1494,6 @@ function renderBudget(){
         <div class="bar-track"><div class="bar-fill" style="width:${(r.sum/maxDay*100).toFixed(0)}%;"></div></div>
         <div class="bar-val mono-num">${money(r.sum)}</div>
       </div>`).join('')}
-    ${foodSum > 0 ? `
-    <div class="section-title">Turismo vs Comida · de las actividades con precio fijo</div>
-    <div class="split-bar">
-      <div style="width:${(tourSum/splitTotal*100).toFixed(0)}%; background:var(--blue);">${tourSum>0?money(tourSum):''}</div>
-      <div style="width:${(foodSum/splitTotal*100).toFixed(0)}%; background:var(--orange);">${foodSum>0?money(foodSum):''}</div>
-    </div>` : ''}
 
     <div class="transport-note">🚆 <b>Comida y transporte</b> son un estimado por día, no por punto del itinerario: LIRR casa↔Manhattan ida y vuelta (~$23,50/persona; $53 el 22 sept, que va por Woodbury Common) y comida completa comiendo afuera (~$64/persona/día; $30 el 23 sept, día corto de salida). El 16 y el 23 no llevan LIRR — el traslado al/desde el aeropuerto es aparte. Si algún día comen en casa de la prima, este número queda por encima de lo real.</div>
     <div class="transport-note" style="background:#EFE9FB;">🎟️ <b>Aladdin</b> ya está pagado — no está incluido en este total.</div>
