@@ -610,7 +610,7 @@ nav.tabbar{
             <select id="f-day"></select>
           </div>
           <div class="field">
-            <label>Categoría</label>
+            <label>Categoría <span id="category-auto-tag" class="auto-tag hidden">sugerido</span></label>
             <select id="f-category">
               <optgroup label="Turismo">
                 <option value="landmark">🗼 Ícono / Monumento</option>
@@ -1358,6 +1358,41 @@ function zoneFromComponents(components){
   return c ? c.name : '—';
 }
 
+// Mapeo de "types" de Google Places a nuestras categorías (ver CATEGORY_META).
+// Se revisa primero primaryType (más confiable) y si no, el array types completo.
+const CATEGORY_TYPE_MAP = {
+  museum:'museum', art_gallery:'museum',
+  park:'park', national_park:'park', state_park:'park', botanical_garden:'park', garden:'park', zoo:'park', aquarium:'park',
+  shopping_mall:'shopping', clothing_store:'shopping', shoe_store:'shopping', department_store:'shopping',
+  jewelry_store:'shopping', book_store:'shopping', gift_shop:'shopping', market:'shopping', supermarket:'shopping', store:'shopping',
+  movie_theater:'show', performing_arts_theater:'show', concert_hall:'show', stadium:'show', amusement_park:'show', casino:'show', night_club:'show',
+  subway_station:'transit', train_station:'transit', transit_station:'transit', light_rail_station:'transit',
+  bus_station:'transit', ferry_terminal:'transit', airport:'transit',
+  bakery:'bakery', cafe:'bakery', coffee_shop:'bakery', dessert_shop:'bakery', ice_cream_shop:'bakery', candy_store:'bakery',
+  meal_takeaway:'streetfood', meal_delivery:'streetfood', food_court:'streetfood', fast_food_restaurant:'streetfood',
+  restaurant:'restaurant',
+  tourist_attraction:'landmark', historical_landmark:'landmark', church:'landmark', hindu_temple:'landmark',
+  synagogue:'landmark', mosque:'landmark', place_of_worship:'landmark', city_hall:'landmark', courthouse:'landmark',
+};
+function categoryFromTypes(primaryType, types){
+  if (primaryType && CATEGORY_TYPE_MAP[primaryType]) return CATEGORY_TYPE_MAP[primaryType];
+  for (const t of (types || [])){
+    if (CATEGORY_TYPE_MAP[t]) return CATEGORY_TYPE_MAP[t];
+    if (t.endsWith('_restaurant')) return 'restaurant';
+  }
+  return null;
+}
+
+function applyDetectedCategory(category){
+  const tag = document.getElementById('category-auto-tag');
+  if (category){
+    document.getElementById('f-category').value = category;
+    tag.classList.remove('hidden');
+  } else {
+    tag.classList.add('hidden');
+  }
+}
+
 function applyDetectedLocation(lat, lon, zone){
   addZone = zone || '—';
   document.getElementById('zone-hint').textContent = addZone !== '—' ? `📍 Zona detectada: ${addZone}` : '';
@@ -1442,7 +1477,7 @@ async function selectPlace(suggestion){
   document.getElementById('place-suggestions').classList.add('hidden');
   try {
     const place = suggestion.placePrediction.toPlace();
-    await place.fetchFields({ fields: ['displayName', 'location', 'addressComponents'] });
+    await place.fetchFields({ fields: ['displayName', 'location', 'addressComponents', 'types', 'primaryType'] });
     const lat = place.location.lat(), lon = place.location.lng();
     document.getElementById('f-name').value = place.displayName || suggestion.placePrediction.mainText.text;
     if (miniMarker) miniMap.removeLayer(miniMarker);
@@ -1451,6 +1486,7 @@ async function selectPlace(suggestion){
     document.getElementById('mini-map-hint').textContent = `📍 ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
     const components = (place.addressComponents || []).map(c => ({ name: c.longText, types: c.types }));
     applyDetectedLocation(lat, lon, zoneFromComponents(components));
+    applyDetectedCategory(categoryFromTypes(place.primaryType, place.types));
     autocompleteSessionToken = null; // nueva sesión para la próxima búsqueda (afecta cómo Google cobra)
   } catch (err){
     console.error('No se pudo obtener el detalle del lugar:', err);
@@ -1466,6 +1502,7 @@ function openAddModal(){
   addZone = '—';
   document.getElementById('zone-hint').textContent = '';
   document.getElementById('day-auto-tag').classList.add('hidden');
+  document.getElementById('category-auto-tag').classList.add('hidden');
   document.getElementById('place-suggestions').classList.add('hidden');
   miniMarker = null;
   document.getElementById('mini-map-hint').textContent = 'Buscá arriba o tocá el mapa para marcar el lugar.';
@@ -1473,7 +1510,9 @@ function openAddModal(){
   setTimeout(() => {
     if (!miniMap){
       miniMap = L.map('mini-map', {zoomControl:false}).setView([40.735,-73.99], 11.5);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(miniMap);
+      L.tileLayer(`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`, {
+        maxZoom:19, attribution:'© OpenStreetMap © CARTO', subdomains:'abcd'
+      }).addTo(miniMap);
       miniMap.on('click', async (e) => {
         if (miniMarker) miniMap.removeLayer(miniMarker);
         miniMarker = L.marker(e.latlng).addTo(miniMap);
