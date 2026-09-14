@@ -615,7 +615,7 @@ nav.tabbar{
     <button class="tab-btn" data-view="view-budget"><span class="ic">💰</span><span class="lbl">Presupuesto</span></button>
   </nav>
 
-  <div id="identity-overlay">
+  <div id="identity-overlay" class="hidden">
     <div class="identity-card">
       <h2>¿Quién eres? 👋</h2>
       <p>Así sabemos quién agregó o marcó cada punto. Se guarda en este dispositivo.</p>
@@ -789,7 +789,11 @@ const visiblePois = () => POIS.filter(p => !p.hidden);
 
 let POIS = [];
 let ACTIVITY = [];
-let CURRENT_USER = localStorage.getItem('ny_trip_user') || null;
+// localStorage puede fallar (modo privado, o el navegador embebido de
+// WhatsApp/Instagram/Messages que a veces no guarda nada entre aperturas) —
+// si eso pasa, mejor preguntar de nuevo que romper el resto de la app.
+let CURRENT_USER = null;
+try { CURRENT_USER = localStorage.getItem('ny_trip_user') || null; } catch (e) {}
 let activeDayFilter = 'all';
 let activeKindFilter = 'all';
 let activeDaysKindFilter = 'all'; // mismo filtro Turismo/Shopping/Comida, para la vista Días
@@ -881,7 +885,8 @@ function renderMemberGrid(){
   grid.querySelectorAll('.member-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       CURRENT_USER = btn.dataset.name;
-      localStorage.setItem('ny_trip_user', CURRENT_USER);
+      try { localStorage.setItem('ny_trip_user', CURRENT_USER); }
+      catch (e) { console.warn('No se pudo guardar el nombre para la próxima vez:', e.message); }
       updateIdentityChip();
       document.getElementById('identity-overlay').classList.add('hidden');
     });
@@ -1346,8 +1351,17 @@ function initMap(){
 // Ubicación en vivo: un punto azul que se mueve solo mientras caminan, como
 // en Google Maps. Vive fuera de pinLayer para no desaparecer cada vez que
 // se filtra por día/categoría — solo se crea una vez y después se mueve.
-function startLiveLocation(){
-  if (!('geolocation' in navigator)) return;
+// El permiso lo recuerda el navegador/sistema, no esta app: si ya lo negaron
+// una vez no insistimos (evita el cartel de permiso de nuevo sin motivo). Si
+// ya lo habían aceptado, watchPosition no debería volver a preguntarlo.
+async function startLiveLocation(){
+  if (!('geolocation' in navigator) || geoWatchId !== null) return;
+  if (navigator.permissions && navigator.permissions.query){
+    try {
+      const status = await navigator.permissions.query({ name: 'geolocation' });
+      if (status.state === 'denied') return;
+    } catch (e) { /* algunos navegadores no soportan consultar 'geolocation' — seguimos igual */ }
+  }
   const youIcon = L.divIcon({
     html: `<div class="you-wrap"><div class="you-pulse"></div><div class="you-dot"></div></div>`,
     className: '', iconSize: [18,18], iconAnchor: [9,9],
