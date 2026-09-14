@@ -658,6 +658,14 @@ nav.tabbar{
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
+  // Loader oficial de Google Maps (carga perezosa de librerías vía importLibrary).
+  // Key restringida por HTTP referrer a nyc-2026-trip.vercel.app y soysoff.github.io.
+  (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({
+    key: "AIzaSyDlAV2L8f6CW3e278qMgWJ7Oevl0WCW09Y",
+    v: "weekly",
+  });
+</script>
+<script>
 const SUPABASE_URL = "https://ppeiyhgwrbrisnvxyyyc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBwZWl5aGd3cmJyaXNudnh5eXljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwMDQ4MjksImV4cCI6MjEwMjU4MDgyOX0.ze-vEzIFeMoUEsBtS8_WGD2u_VjOeIbaCGUerwsPtCw";
 const VAPID_PUBLIC_KEY = "BF3YAws4sEeGM77h7Bhq5k2MScUVCnK27Do6L_5C3a4od15Iaeu5mxjIVmIIAw6FJr_oN-dw_Qhx90EP7QNAgnY";
@@ -1341,10 +1349,13 @@ function suggestDayForLocation(lat, lon){
   return bestDay;
 }
 
-function zoneFromAddress(addr){
-  if (!addr) return '—';
-  return addr.neighbourhood || addr.suburb || addr.quarter || addr.city_district
-      || addr.town || addr.village || addr.city || '—';
+function zoneFromComponents(components){
+  // components: [{name, types}] (normalizado desde Geocoder clásico o Place nuevo)
+  if (!components || !components.length) return '—';
+  const byType = t => components.find(c => c.types.includes(t));
+  const c = byType('neighborhood') || byType('sublocality_level_1') || byType('sublocality')
+         || byType('locality') || byType('administrative_area_level_2');
+  return c ? c.name : '—';
 }
 
 function applyDetectedLocation(lat, lon, zone){
@@ -1360,11 +1371,23 @@ function applyDetectedLocation(lat, lon, zone){
   }
 }
 
+// Búsqueda de lugares con Google Places (New) — se cambió desde OpenStreetMap
+// porque Nominatim no encuentra bien marcas/comercios puntuales (ver contexto.md).
+let autocompleteSessionToken = null;
+async function getSessionToken(){
+  const { AutocompleteSessionToken } = await google.maps.importLibrary('places');
+  if (!autocompleteSessionToken) autocompleteSessionToken = new AutocompleteSessionToken();
+  return autocompleteSessionToken;
+}
+
 async function reverseGeocode(lat, lon){
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1&zoom=16`);
-    const data = await res.json();
-    return zoneFromAddress(data.address);
+    const { Geocoder } = await google.maps.importLibrary('geocoding');
+    const geocoder = new Geocoder();
+    const { results } = await geocoder.geocode({ location: { lat, lng: lon } });
+    if (!results || !results.length) return '—';
+    const components = results[0].address_components.map(c => ({ name: c.long_name, types: c.types }));
+    return zoneFromComponents(components);
   } catch (err){
     console.error('Reverse geocode falló:', err);
     return '—';
@@ -1377,7 +1400,7 @@ document.getElementById('f-name').addEventListener('input', (e) => {
   const box = document.getElementById('place-suggestions');
   clearTimeout(placeSearchTimer);
   if (q.length < 3){ box.classList.add('hidden'); box.innerHTML = ''; return; }
-  placeSearchTimer = setTimeout(() => searchPlaces(q), 450);
+  placeSearchTimer = setTimeout(() => searchPlaces(q), 300);
 });
 document.addEventListener('click', (e) => {
   const box = document.getElementById('place-suggestions');
@@ -1388,37 +1411,50 @@ async function searchPlaces(q){
   const seq = ++placeSearchSeq;
   const box = document.getElementById('place-suggestions');
   try {
-    // Sesgado a NYC + Long Island (viewbox), sin excluir el resto del mundo.
-    const viewbox = '-74.35,40.40,-73.55,41.05';
-    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&viewbox=${viewbox}&q=${encodeURIComponent(q)}`;
-    const res = await fetch(url);
-    const results = await res.json();
+    const { AutocompleteSuggestion } = await google.maps.importLibrary('places');
+    const token = await getSessionToken();
+    const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
+      input: q,
+      sessionToken: token,
+      // Sesgado a NYC + Long Island, sin excluir el resto del mundo.
+      locationBias: { west: -74.35, south: 40.40, east: -73.55, north: 41.05 },
+    });
     if (seq !== placeSearchSeq) return; // ya hay una búsqueda más nueva en curso
-    lastSearchResults = results;
-    if (!results.length){ box.classList.add('hidden'); box.innerHTML = ''; return; }
-    box.innerHTML = results.map((r,i) => `
-      <button type="button" class="place-suggestion" data-i="${i}">
-        <span class="ps-name">${esc((r.namedetails && r.namedetails.name) || r.display_name.split(',')[0])}</span>
-        <span class="ps-addr">${esc(r.display_name)}</span>
-      </button>`).join('');
+    lastSearchResults = (suggestions || []).filter(s => s.placePrediction);
+    if (!lastSearchResults.length){ box.classList.add('hidden'); box.innerHTML = ''; return; }
+    box.innerHTML = lastSearchResults.map((s,i) => {
+      const p = s.placePrediction;
+      return `<button type="button" class="place-suggestion" data-i="${i}">
+        <span class="ps-name">${esc(p.mainText ? p.mainText.text : p.text.text)}</span>
+        <span class="ps-addr">${esc(p.secondaryText ? p.secondaryText.text : '')}</span>
+      </button>`;
+    }).join('');
     box.classList.remove('hidden');
     box.querySelectorAll('.place-suggestion').forEach(btn => {
       btn.addEventListener('click', () => selectPlace(lastSearchResults[Number(btn.dataset.i)]));
     });
   } catch (err){
-    console.error('Búsqueda de lugares falló:', err);
+    console.error('Búsqueda de lugares (Google) falló:', err);
   }
 }
 
-function selectPlace(r){
-  document.getElementById('f-name').value = (r.namedetails && r.namedetails.name) || r.display_name.split(',')[0];
+async function selectPlace(suggestion){
   document.getElementById('place-suggestions').classList.add('hidden');
-  const lat = Number(r.lat), lon = Number(r.lon);
-  if (miniMarker) miniMap.removeLayer(miniMarker);
-  miniMarker = L.marker([lat, lon]).addTo(miniMap);
-  miniMap.setView([lat, lon], 15);
-  document.getElementById('mini-map-hint').textContent = `📍 ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-  applyDetectedLocation(lat, lon, zoneFromAddress(r.address));
+  try {
+    const place = suggestion.placePrediction.toPlace();
+    await place.fetchFields({ fields: ['displayName', 'location', 'addressComponents'] });
+    const lat = place.location.lat(), lon = place.location.lng();
+    document.getElementById('f-name').value = place.displayName || suggestion.placePrediction.mainText.text;
+    if (miniMarker) miniMap.removeLayer(miniMarker);
+    miniMarker = L.marker([lat, lon]).addTo(miniMap);
+    miniMap.setView([lat, lon], 15);
+    document.getElementById('mini-map-hint').textContent = `📍 ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    const components = (place.addressComponents || []).map(c => ({ name: c.longText, types: c.types }));
+    applyDetectedLocation(lat, lon, zoneFromComponents(components));
+    autocompleteSessionToken = null; // nueva sesión para la próxima búsqueda (afecta cómo Google cobra)
+  } catch (err){
+    console.error('No se pudo obtener el detalle del lugar:', err);
+  }
 }
 
 function openAddModal(){

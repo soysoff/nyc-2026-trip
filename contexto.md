@@ -140,6 +140,11 @@ Acentos: azul `#3B55E8`, violeta `#8654F0`, verde `#2E9E5B`, amarillo `#F0AE2E`,
 
 **Mapa minimalista.** Se cambió de los tiles estándar de OpenStreetMap a **CartoDB Positron** (grises claros) para que los pines de color sean lo único que resalte.
 
+**Búsqueda de lugares en "Agregar punto" — Google Places (13 sep 2026).** Se probó primero con Nominatim/OpenStreetMap (gratis, sin key) pero no encontraba bien marcas puntuales (ej. "Salomon" tienda de deportes), así que se migró a **Google Places API (New)** + **Geocoding API** + **Maps JavaScript API** (esta última es prerequisito del loader `importLibrary`, aunque no se use directamente — sin ella el Geocoder tira `ApiNotActivatedMapError`). El campo "Nombre" del modal ahora es autocomplete en vivo (`AutocompleteSuggestion.fetchAutocompleteSuggestions` con `AutocompleteSessionToken`); al elegir un resultado se hace `place.fetchFields()` y luego `Geocoder.geocode()` (reverse) para detectar la zona, que junto con la ubicación alimenta `suggestDayForLocation` (sugiere el día comparando cercanía con los puntos ya planeados). El campo manual de "Zona" se eliminó del formulario — ahora siempre se autodetecta.
+- Proyecto de Google Cloud dedicado: `nyc-2026-trip` (cuenta soyso.studio@gmail.com), separado del proyecto personal "Luca" del usuario.
+- API key `NYC 2026 Trip - Places` restringida por HTTP referrer a `nyc-2026-trip.vercel.app/*`, `soysoff.github.io/*` y `localhost/*` (para desarrollo), y restringida a esas 3 APIs únicamente.
+- Protección de costo: la cuenta está en "Free trial" de Google Cloud, lo que bloquea tanto subir como bajar cuotas manualmente (no se pudo poner un hard cap en requests/día). Como respaldo se configuró un **Billing Budget "Alerts only"** de $10/mes con avisos por email al 50%/90%/100%. El "Spend cap enforcement" (preview) no aplica: solo cubre Cloud Run, Cloud Run Functions, Gemini API y Vertex AI — no Places.
+
 ---
 
 ## 5. Bugs encontrados y arreglados
