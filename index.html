@@ -402,6 +402,10 @@ nav.tabbar{
 .bar-val{width:48px; text-align:right; font-size:12px; color:var(--ink); flex-shrink:0; font-weight:700;}
 .split-bar{display:flex; height:26px; border-radius:12px; overflow:hidden; margin-bottom:6px;}
 .split-bar div{display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#fff;}
+.cost-line{display:flex; align-items:center; justify-content:space-between; padding:10px 2px; font-size:13px; border-bottom:1px solid var(--line);}
+.cost-line:last-of-type{border-bottom:none;}
+.cost-line span{color:var(--ink-soft); font-weight:600;}
+.cost-line b{font-weight:800; color:var(--ink);}
 .transport-note{
   margin-top:20px; padding:14px 16px; border-radius:18px; background:#FFF3E0;
   font-size:12.5px; color:var(--ink); line-height:1.5; font-weight:600;
@@ -757,9 +761,24 @@ const HOME = {
   lon: -73.6606606,
 };
 
-// Pedido de la familia (sep 2026): no mostrar precios todavía mientras
-// terminan de definir el itinerario. Los costos siguen en la base.
-const SHOW_PRICES = false;
+// Ya definieron el itinerario y las decisiones de "solo por fuera" en cada
+// mirador pago (sep 2026) — precios activados.
+const SHOW_PRICES = true;
+
+// Comida y transporte no son POIs con pin propio, así que no tienen costo
+// individual — son un promedio por día que la familia investigó y decidió
+// juntos (ver el cuadro de costos y contexto.md). Comida: ~$64/persona
+// comiendo afuera todo el día. Transporte: LIRR casa↔Manhattan ida y vuelta
+// ~$23.50/persona; el 22 sept no hay LIRR de ida (Woodbury Common queda en
+// dirección contraria) sino bus ida/vuelta ~$40 + un solo LIRR de regreso.
+const DAILY_EXTRAS = {
+  '2026-09-17': {food:64, transport:23.5},
+  '2026-09-18': {food:64, transport:23.5},
+  '2026-09-19': {food:64, transport:23.5},
+  '2026-09-20': {food:64, transport:23.5},
+  '2026-09-21': {food:64, transport:23.5},
+  '2026-09-22': {food:64, transport:53},
+};
 
 // Cada punto de comida se muestra u oculta individualmente (columna `hidden`
 // en la base) — así se van sumando restaurantes uno por uno a medida que la
@@ -1439,8 +1458,7 @@ function renderBudget(){
   }
   // Los costos del itinerario están capturados por persona (así venían en el sheet original).
   const visible = visiblePois();
-  const perPerson = visible.reduce((s,p)=>s + (Number(p.cost)||0), 0);
-  const total = perPerson * MEMBERS.length;
+  const activitiesPerPerson = visible.reduce((s,p)=>s + (Number(p.cost)||0), 0);
   const g = groupByDay(visible);
   const dayRows = DAY_ORDER.filter(d=>g[d]).map(d => {
     const sum = g[d].reduce((s,p)=>s+(Number(p.cost)||0),0);
@@ -1451,12 +1469,26 @@ function renderBudget(){
   const foodSum = visible.filter(p=>(CATEGORY_META[p.category]||{}).kind==='food').reduce((s,p)=>s+(Number(p.cost)||0),0);
   const splitTotal = Math.max(1, tourSum+foodSum);
 
+  // Comida y transporte no viven en un POI — son el estimado por día de
+  // DAILY_EXTRAS, sumado sobre los días del itinerario (ver la constante).
+  const extrasDays = Object.keys(DAILY_EXTRAS);
+  const foodEstimate = extrasDays.reduce((s,d)=>s + DAILY_EXTRAS[d].food, 0);
+  const transportEstimate = extrasDays.reduce((s,d)=>s + DAILY_EXTRAS[d].transport, 0);
+  const perPerson = activitiesPerPerson + foodEstimate + transportEstimate;
+  const total = perPerson * MEMBERS.length;
+
   el.innerHTML = `
     <div class="budget-hero">
       <div class="budget-tile"><div class="label">Total del viaje (×${MEMBERS.length})</div><div class="value mono-num">${money(total)}</div></div>
       <div class="budget-tile alt"><div class="label">Por persona</div><div class="value mono-num">${money(perPerson)}</div></div>
     </div>
-    <div class="section-title">Por día · por persona</div>
+
+    <div class="section-title">De qué se arma · por persona</div>
+    <div class="cost-line"><span>🎟️ Actividades con precio fijo</span><b class="mono-num">${money(activitiesPerPerson)}</b></div>
+    <div class="cost-line"><span>🍽️ Comida (estimado, comiendo afuera)</span><b class="mono-num">${money(foodEstimate)}</b></div>
+    <div class="cost-line"><span>🚆 Transporte (estimado, LIRR + bus)</span><b class="mono-num">${money(transportEstimate)}</b></div>
+
+    <div class="section-title">Actividades · por día · por persona</div>
     ${dayRows.map(r => `
       <div class="bar-row">
         <div class="bar-label">${dayLabel(r.day)}</div>
@@ -1464,12 +1496,14 @@ function renderBudget(){
         <div class="bar-val mono-num">${money(r.sum)}</div>
       </div>`).join('')}
     ${foodSum > 0 ? `
-    <div class="section-title">Turismo vs Comida · por persona</div>
+    <div class="section-title">Turismo vs Comida · de las actividades con precio fijo</div>
     <div class="split-bar">
       <div style="width:${(tourSum/splitTotal*100).toFixed(0)}%; background:var(--blue);">${tourSum>0?money(tourSum):''}</div>
       <div style="width:${(foodSum/splitTotal*100).toFixed(0)}%; background:var(--orange);">${foodSum>0?money(foodSum):''}</div>
     </div>` : ''}
-    <div class="transport-note">🚕 <b>Transporte:</b> aún no tienen esos costos/horarios — el campo está listo en cada punto para llenarlo cuando lo sepan. No se incluye en el total todavía.</div>
+
+    <div class="transport-note">🚆 <b>Comida y transporte</b> son un estimado por día, no por punto del itinerario: LIRR casa↔Manhattan ida y vuelta (~$23,50/persona; $53 el 22 sept, que va por Woodbury Common) y comida completa comiendo afuera (~$64/persona/día). Si algún día comen en casa de la prima, este número queda por encima de lo real.</div>
+    <div class="transport-note" style="background:#EFE9FB;">🎟️ <b>Aladdin</b> ya está pagado — no está incluido en este total.</div>
   `;
 }
 
