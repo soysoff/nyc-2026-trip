@@ -277,6 +277,9 @@ nav.tabbar{
 .del-btn{background:none; border:none; color:#D8D2C6; font-size:13px; cursor:pointer; transition:color .2s ease, transform .15s ease;}
 .del-btn:hover{color:var(--coral);}
 .del-btn:active{transform:scale(.85);}
+.edit-btn{background:none; border:none; color:#D8D2C6; font-size:13px; cursor:pointer; transition:color .2s ease, transform .15s ease;}
+.edit-btn:hover{color:var(--blue);}
+.edit-btn:active{transform:scale(.85);}
 
 .poi-card.is-done{opacity:.6;}
 .poi-card.is-done .poi-name{text-decoration:line-through; text-decoration-color:var(--done);}
@@ -350,7 +353,7 @@ nav.tabbar{
 .popup-done.on{background:var(--done);}
 .popup-actions{display:flex; gap:7px; flex-wrap:wrap; align-items:center;}
 .popup-maps{
-  font-size:11.5px; padding:6px 12px; border-radius:999px; background:var(--blue); color:#fff;
+  font-size:11.5px; padding:6px 12px; border-radius:999px; background:var(--blue); color:#fff !important;
   font-weight:800; text-decoration:none; white-space:nowrap;
   transition:transform .16s cubic-bezier(.34,1.56,.64,1), filter .2s ease;
 }
@@ -459,6 +462,12 @@ nav.tabbar{
   width:100%; padding:12px; border-radius:16px; margin-top:8px; background:none; border:none;
   color:var(--ink-soft); font-size:13px; font-weight:700; cursor:pointer;
 }
+.btn-danger{
+  width:100%; padding:15px; border-radius:16px; border:none; margin-top:8px;
+  background:var(--coral); color:#fff; font-weight:800; font-size:14.5px;
+  letter-spacing:-.01em; cursor:pointer;
+}
+.btn-danger:active{transform:scale(.97);}
 
 /* ---------- activity panel ---------- */
 #activity-panel{
@@ -594,7 +603,7 @@ nav.tabbar{
   <div class="sheet-overlay hidden" id="add-overlay">
     <div class="sheet">
       <div class="sheet-head">
-        <h3>✨ Agregar punto de interés</h3>
+        <h3 id="add-modal-title">✨ Agregar punto de interés</h3>
         <button type="button" class="sheet-close" id="btn-close-add" aria-label="Cerrar">✕</button>
       </div>
       <form id="add-form">
@@ -647,9 +656,21 @@ nav.tabbar{
           <div id="mini-map"></div>
           <div class="mini-map-hint" id="mini-map-hint">Toca el mapa para marcar el lugar.</div>
         </div>
-        <button type="submit" class="btn-primary">Agregar al plan</button>
+        <button type="submit" class="btn-primary" id="add-submit-btn">Agregar al plan</button>
         <button type="button" class="btn-ghost" id="btn-cancel-add">Cancelar</button>
       </form>
+    </div>
+  </div>
+
+  <div class="sheet-overlay hidden" id="delete-overlay">
+    <div class="sheet" style="max-width:400px;">
+      <div class="sheet-head">
+        <h3>🗑️ Eliminar punto</h3>
+        <button type="button" class="sheet-close" id="btn-close-delete" aria-label="Cerrar">✕</button>
+      </div>
+      <p id="delete-confirm-text" style="margin:0 0 18px; color:var(--ink-soft); font-weight:600; font-size:14px;"></p>
+      <button type="button" class="btn-danger" id="btn-confirm-delete">Eliminar del plan</button>
+      <button type="button" class="btn-ghost" id="btn-cancel-delete">Cancelar</button>
     </div>
   </div>
 
@@ -756,11 +777,16 @@ function haversine(lat1, lon1, lat2, lon2){
 
 function legBetween(a, b){
   if (a.lat == null || a.lon == null || b.lat == null || b.lon == null) return null;
-  const dist = haversine(a.lat, a.lon, b.lat, b.lon) * GRID_FACTOR;
+  // Dentro del mismo parque no hay rejilla de calles que rodear (los caminos
+  // son más directos) y nunca conviene el metro para cruzarlo — aunque la
+  // línea recta dé más de SUBWAY_THRESHOLD_M (ej. Sheep Meadow → Great Lawn).
+  const sameParkStroll = a.category === 'park' && b.category === 'park' && a.zone === b.zone;
+  const straight = haversine(a.lat, a.lon, b.lat, b.lon);
+  const dist = straight * (sameParkStroll ? 1.1 : GRID_FACTOR);
   return {
     dist,
     mins: Math.max(1, Math.round(dist / WALK_M_PER_MIN)),
-    transit: dist > SUBWAY_THRESHOLD_M,
+    transit: !sameParkStroll && dist > SUBWAY_THRESHOLD_M,
   };
 }
 
@@ -863,7 +889,6 @@ function poiCardHtml(p, i){
   const schedChip = p.schedule ? `<span class="chip">🕐 ${esc(p.schedule)}</span>` : '';
   const zoneChip = p.zone && p.zone !== '—' ? `<span class="chip">📍 ${esc(p.zone)}</span>` : '';
   const addedChip = p.added_by ? `<span class="chip added">+ ${esc(p.added_by)}</span>` : '';
-  const delBtn = p.added_by ? `<button class="del-btn" data-id="${p.id}" title="Eliminar">🗑️</button>` : '';
   const donePill = p.is_done ? `<span class="done-pill">✓ Visitado</span>` : '';
   return `
   <li class="poi-card ${p.is_done?'is-done':''}" data-id="${p.id}" draggable="false" style="${delay}">
@@ -879,7 +904,8 @@ function poiCardHtml(p, i){
       <button class="done-btn ${p.is_done?'on':''}" data-id="${p.id}" title="Marcar visitado">✓</button>
       <a class="maps-btn" href="${mapsUrl(p)}" target="_blank" rel="noopener"
          title="Cómo llegar en Google Maps" aria-label="Cómo llegar a ${esc(p.name)}">🧭</a>
-      ${delBtn}
+      <button class="edit-btn" data-id="${p.id}" title="Editar">✏️</button>
+      <button class="del-btn" data-id="${p.id}" title="Eliminar">🗑️</button>
     </div>
   </li>`;
 }
@@ -948,7 +974,8 @@ function renderDays(){
   }
 
   pager.querySelectorAll('.done-btn').forEach(b=>b.addEventListener('click', ()=>toggleDone(b.dataset.id)));
-  pager.querySelectorAll('.del-btn').forEach(b=>b.addEventListener('click', ()=>deletePoi(b.dataset.id)));
+  pager.querySelectorAll('.edit-btn').forEach(b=>b.addEventListener('click', ()=>openEditModal(b.dataset.id)));
+  pager.querySelectorAll('.del-btn').forEach(b=>b.addEventListener('click', ()=>confirmDelete(b.dataset.id)));
   pager.querySelectorAll('.poi-list').forEach(list => {
     list.querySelectorAll('.poi-card').forEach(card => makeDraggable(card, list));
     refreshLegs(list);
@@ -1163,9 +1190,30 @@ async function toggleDone(id){
     console.error('No se pudo guardar el check:', error);
   }
 }
-async function deletePoi(id){
+let deleteTargetId = null;
+function confirmDelete(id){
   if (!requireIdentity()) return;
-  if (!confirm('¿Eliminar este punto del plan?')) return;
+  const p = POIS.find(x => x.id === id);
+  if (!p) return;
+  deleteTargetId = id;
+  document.getElementById('delete-confirm-text').textContent = `¿Eliminar "${p.name}" del plan? Esta acción no se puede deshacer.`;
+  document.getElementById('delete-overlay').classList.remove('hidden');
+}
+document.getElementById('btn-cancel-delete').addEventListener('click', () => {
+  document.getElementById('delete-overlay').classList.add('hidden');
+  deleteTargetId = null;
+});
+document.getElementById('btn-close-delete').addEventListener('click', () => {
+  document.getElementById('delete-overlay').classList.add('hidden');
+  deleteTargetId = null;
+});
+document.getElementById('btn-confirm-delete').addEventListener('click', async () => {
+  document.getElementById('delete-overlay').classList.add('hidden');
+  const id = deleteTargetId;
+  deleteTargetId = null;
+  if (id) await deletePoi(id);
+});
+async function deletePoi(id){
   POIS = POIS.filter(p=>p.id!==id);
   renderDays(); renderMap(); renderBudget();
   await sb.from('pois').delete().eq('id', id);
@@ -1493,19 +1541,48 @@ async function selectPlace(suggestion){
   }
 }
 
-function openAddModal(){
+// editingId: si está seteado, el modal de "Agregar" pasa a modo edición
+// sobre ese punto (mismo formulario, se rellena con sus datos actuales).
+let editingId = null;
+
+function openEditModal(id){
+  const p = POIS.find(x => x.id === id);
+  if (p) openAddModal(p);
+}
+
+function openAddModal(editPoi = null){
   if (!requireIdentity()) return;
+  editingId = editPoi ? editPoi.id : null;
   const daySel = document.getElementById('f-day');
   daySel.innerHTML = DAY_ORDER.map(d=>`<option value="${d}">${dayLabel(d)}</option>`).join('');
   document.getElementById('add-form').reset();
-  if (currentDayKey) daySel.value = currentDayKey;
-  addZone = '—';
-  document.getElementById('zone-hint').textContent = '';
+  document.getElementById('add-modal-title').textContent = editPoi ? '✏️ Editar punto' : '✨ Agregar punto de interés';
+  document.getElementById('add-submit-btn').textContent = editPoi ? 'Guardar cambios' : 'Agregar al plan';
   document.getElementById('day-auto-tag').classList.add('hidden');
   document.getElementById('category-auto-tag').classList.add('hidden');
   document.getElementById('place-suggestions').classList.add('hidden');
+  if (miniMarker && miniMap){ miniMap.removeLayer(miniMarker); }
   miniMarker = null;
-  document.getElementById('mini-map-hint').textContent = 'Buscá arriba o tocá el mapa para marcar el lugar.';
+
+  if (editPoi){
+    daySel.value = editPoi.day;
+    document.getElementById('f-name').value = editPoi.name;
+    document.getElementById('f-category').value = editPoi.category;
+    document.getElementById('f-cost').value = editPoi.cost ?? '';
+    document.getElementById('f-schedule').value = editPoi.schedule || '';
+    document.getElementById('f-notes').value = editPoi.notes || '';
+    addZone = editPoi.zone || '—';
+    document.getElementById('zone-hint').textContent = addZone !== '—' ? `📍 Zona: ${addZone}` : '';
+    document.getElementById('mini-map-hint').textContent = editPoi.lat != null
+      ? `📍 ${editPoi.lat.toFixed(4)}, ${editPoi.lon.toFixed(4)}`
+      : 'Buscá arriba o tocá el mapa para marcar el lugar.';
+  } else {
+    if (currentDayKey) daySel.value = currentDayKey;
+    addZone = '—';
+    document.getElementById('zone-hint').textContent = '';
+    document.getElementById('mini-map-hint').textContent = 'Buscá arriba o tocá el mapa para marcar el lugar.';
+  }
+
   document.getElementById('add-overlay').classList.remove('hidden');
   setTimeout(() => {
     if (!miniMap){
@@ -1520,15 +1597,19 @@ function openAddModal(){
         const zone = await reverseGeocode(e.latlng.lat, e.latlng.lng);
         applyDetectedLocation(e.latlng.lat, e.latlng.lng, zone);
       });
+    }
+    if (editPoi && editPoi.lat != null && editPoi.lon != null){
+      miniMarker = L.marker([editPoi.lat, editPoi.lon]).addTo(miniMap);
+      miniMap.setView([editPoi.lat, editPoi.lon], 15);
     } else {
       miniMap.setView([40.735,-73.99], 11.5);
     }
     miniMap.invalidateSize();
   }, 60);
 }
-document.getElementById('btn-fab').addEventListener('click', openAddModal);
-document.getElementById('btn-cancel-add').addEventListener('click', () => document.getElementById('add-overlay').classList.add('hidden'));
-document.getElementById('btn-close-add').addEventListener('click', () => document.getElementById('add-overlay').classList.add('hidden'));
+document.getElementById('btn-fab').addEventListener('click', () => openAddModal());
+document.getElementById('btn-cancel-add').addEventListener('click', () => { document.getElementById('add-overlay').classList.add('hidden'); editingId = null; });
+document.getElementById('btn-close-add').addEventListener('click', () => { document.getElementById('add-overlay').classList.add('hidden'); editingId = null; });
 
 document.getElementById('add-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1541,14 +1622,34 @@ document.getElementById('add-form').addEventListener('submit', async (e) => {
   const zone = addZone;
   const notes = document.getElementById('f-notes').value.trim() || null;
   if (!name) return;
+  const lat = miniMarker ? miniMarker.getLatLng().lat : null;
+  const lon = miniMarker ? miniMarker.getLatLng().lng : null;
+
+  if (editingId){
+    const id = editingId;
+    editingId = null;
+    const patch = {
+      day, zone, category, name,
+      cost: costRaw === '' ? null : Number(costRaw),
+      schedule, notes, lat, lon,
+      updated_by: CURRENT_USER,
+    };
+    document.getElementById('add-overlay').classList.add('hidden');
+    const {data, error} = await sb.from('pois').update(patch).eq('id', id).select().single();
+    if (!error && data){
+      const idx = POIS.findIndex(p => p.id === id);
+      if (idx !== -1) POIS[idx] = data;
+      renderDays(); renderMap(); renderBudget();
+    }
+    return;
+  }
+
   const dayItems = POIS.filter(p=>p.day===day);
   const orderIndex = dayItems.length ? Math.max(...dayItems.map(p=>p.order_index)) + 1 : 0;
   const row = {
     day, zone, category, name,
     cost: costRaw === '' ? null : Number(costRaw),
-    schedule, notes,
-    lat: miniMarker ? miniMarker.getLatLng().lat : null,
-    lon: miniMarker ? miniMarker.getLatLng().lng : null,
+    schedule, notes, lat, lon,
     added_by: CURRENT_USER, updated_by: CURRENT_USER,
     order_index: orderIndex,
   };
