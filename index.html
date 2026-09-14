@@ -347,6 +347,21 @@ nav.tabbar{
 .pin.done{opacity:.4;}
 .leaflet-popup-content-wrapper{background:var(--paper); color:var(--ink); border-radius:16px; box-shadow:0 12px 30px rgba(23,20,22,.2);}
 .leaflet-popup-tip{background:var(--paper);}
+
+/* ---------- ubicación en vivo ("tú estás aquí") ---------- */
+.you-wrap{width:18px; height:18px; position:relative;}
+.you-pulse{
+  position:absolute; inset:-11px; border-radius:50%; background:var(--blue); opacity:.35;
+  animation:youPulse 2.4s ease-out infinite;
+}
+@keyframes youPulse{
+  0%{transform:scale(.35); opacity:.5;}
+  100%{transform:scale(1.9); opacity:0;}
+}
+.you-dot{
+  position:absolute; inset:0; border-radius:50%; background:var(--blue);
+  border:3px solid #fff; box-shadow:0 1px 4px rgba(23,20,22,.35);
+}
 .leaflet-popup-content{margin:13px 15px; font-family:'Plus Jakarta Sans';}
 .popup-title{font-weight:800; font-size:14.5px; margin-bottom:4px;}
 .popup-meta{font-size:11.5px; color:var(--ink-soft); margin-bottom:9px; font-weight:600;}
@@ -758,6 +773,7 @@ let activeDayFilter = 'all';
 let activeKindFilter = 'all';
 let activeDaysKindFilter = 'all'; // mismo filtro Turismo/Shopping/Comida, para la vista Días
 let map, miniMap, miniMarker = null, pinLayer, routeLayer = null;
+let userMarker = null, userAccuracyCircle = null, geoWatchId = null;
 const markerById = {};
 
 function esc(s){
@@ -1302,6 +1318,36 @@ function initMap(){
     document.querySelectorAll('#filter-kind .filter-chip').forEach(x=>x.classList.remove('active'));
     b.classList.add('active'); activeKindFilter = b.dataset.kind; renderMap();
   }));
+
+  startLiveLocation();
+}
+
+// Ubicación en vivo: un punto azul que se mueve solo mientras caminan, como
+// en Google Maps. Vive fuera de pinLayer para no desaparecer cada vez que
+// se filtra por día/categoría — solo se crea una vez y después se mueve.
+function startLiveLocation(){
+  if (!('geolocation' in navigator)) return;
+  const youIcon = L.divIcon({
+    html: `<div class="you-wrap"><div class="you-pulse"></div><div class="you-dot"></div></div>`,
+    className: '', iconSize: [18,18], iconAnchor: [9,9],
+  });
+  geoWatchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      const { latitude, longitude, accuracy } = pos.coords;
+      if (!userMarker){
+        userMarker = L.marker([latitude, longitude], {icon: youIcon, zIndexOffset: 2000, interactive: false}).addTo(map);
+        userAccuracyCircle = L.circle([latitude, longitude], {
+          radius: accuracy, color: '#3B55E8', weight: 1, fillColor: '#3B55E8', fillOpacity: .08, interactive: false,
+        }).addTo(map);
+      } else {
+        userMarker.setLatLng([latitude, longitude]);
+        userAccuracyCircle.setLatLng([latitude, longitude]);
+        userAccuracyCircle.setRadius(accuracy);
+      }
+    },
+    (err) => console.warn('No se pudo obtener la ubicación en vivo:', err.message),
+    { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+  );
 }
 
 function renderMap(){
