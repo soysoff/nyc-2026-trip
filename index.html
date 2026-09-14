@@ -203,6 +203,9 @@ nav.tabbar{
   padding:5px 11px; border-radius:999px; white-space:nowrap;}
 .day-walk:empty{display:none;}
 .poi-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;}
+.empty-filter-msg{
+  padding:28px 16px; text-align:center; color:var(--ink-soft); font-size:13px; font-weight:600;
+}
 
 /* tramo entre dos lugares */
 .leg{
@@ -552,6 +555,7 @@ nav.tabbar{
       <div class="filter-bar" id="filter-kind">
         <button class="filter-chip active" data-kind="all">Todos</button>
         <button class="filter-chip" data-kind="tour">🗼 Turismo</button>
+        <button class="filter-chip" data-kind="shopping">🛍️ Shopping</button>
         <button class="filter-chip" data-kind="food">🍽️ Comida</button>
       </div>
       <div id="route-summary"></div>
@@ -567,6 +571,12 @@ nav.tabbar{
       <div class="day-strip-wrap">
         <div class="day-strip" id="day-strip"></div>
         <button class="viewall-btn" id="viewall-toggle" title="Ver todos los días en una sola lista">📋 Ver todo</button>
+      </div>
+      <div class="filter-bar" id="filter-days-kind">
+        <button class="filter-chip active" data-kind="all">Todos</button>
+        <button class="filter-chip" data-kind="tour">🗼 Turismo</button>
+        <button class="filter-chip" data-kind="shopping">🛍️ Shopping</button>
+        <button class="filter-chip" data-kind="food">🍽️ Comida</button>
       </div>
       <div class="day-pager" id="day-pager"></div>
     </section>
@@ -708,6 +718,13 @@ const CATEGORY_META = {
   streetfood: {emoji:'🥡', label:'Callejera/Casual',  kind:'food', color:'#FF8A3D'},
 };
 
+// Grupo de filtro (chips Turismo/Shopping/Comida): más granular que `kind`
+// (que sigue siendo solo tour/food para no tocar las sumas del presupuesto).
+function filterGroup(category){
+  if (category === 'shopping') return 'shopping';
+  return (CATEGORY_META[category] || CATEGORY_META.landmark).kind;
+}
+
 const MEMBERS = [
   {name:'Gaby', color:'#FF5C45'}, {name:'Adolfo', color:'#0FA99A'},
   {name:'Nancy', color:'#F0AE2E'}, {name:'Sofi', color:'#8654F0'},
@@ -739,6 +756,7 @@ let ACTIVITY = [];
 let CURRENT_USER = localStorage.getItem('ny_trip_user') || null;
 let activeDayFilter = 'all';
 let activeKindFilter = 'all';
+let activeDaysKindFilter = 'all'; // mismo filtro Turismo/Shopping/Comida, para la vista Días
 let map, miniMap, miniMarker = null, pinLayer, routeLayer = null;
 const markerById = {};
 
@@ -944,16 +962,21 @@ function renderDays(){
   const prevScroll = prevPage ? prevPage.scrollTop : 0;
   const prevPagerScroll = showAllDays ? pager.scrollTop : 0;
 
+  const daysFiltered = activeDaysKindFilter !== 'all';
   pager.innerHTML = days.map(day => {
     const items = g[day];
     const zones = [...new Set(items.map(p=>p.zone).filter(z=>z && z!=='—'))].slice(0,3).join(' · ');
+    const shown = daysFiltered ? items.filter(p => filterGroup(p.category) === activeDaysKindFilter) : items;
+    const listHtml = shown.length
+      ? shown.map((p,i)=>poiCardHtml(p,i)).join('')
+      : `<li class="empty-filter-msg">Nada de esta categoría este día.</li>`;
     return `<div class="day-page" data-day="${day}">
       <div class="day-page-head">
         ${showAllDays ? `<span class="day-page-title">${dayLabel(day)}</span>` : ''}
         ${zones ? `<span class="day-page-zone">📍 ${esc(zones)}</span>` : ''}
         <span class="day-walk" data-day="${day}"></span>
       </div>
-      <ul class="poi-list" data-day="${day}">${items.map((p,i)=>poiCardHtml(p,i)).join('')}</ul>
+      <ul class="poi-list" data-day="${day}">${listHtml}</ul>
     </div>`;
   }).join('');
 
@@ -977,6 +1000,15 @@ function renderDays(){
   pager.querySelectorAll('.edit-btn').forEach(b=>b.addEventListener('click', ()=>openEditModal(b.dataset.id)));
   pager.querySelectorAll('.del-btn').forEach(b=>b.addEventListener('click', ()=>confirmDelete(b.dataset.id)));
   pager.querySelectorAll('.poi-list').forEach(list => {
+    if (daysFiltered){
+      // Con un filtro activo la lista no muestra el día completo — reordenar
+      // acá desalinearía el order_index real. Tampoco tiene sentido mostrar
+      // tramos: el trayecto real pasa también por lo que el filtro esconde.
+      list.querySelectorAll('.leg').forEach(el => el.remove());
+      const badge = document.querySelector(`.day-walk[data-day="${list.dataset.day}"]`);
+      if (badge) badge.textContent = '';
+      return;
+    }
     list.querySelectorAll('.poi-card').forEach(card => makeDraggable(card, list));
     refreshLegs(list);
   });
@@ -1042,6 +1074,10 @@ document.getElementById('viewall-toggle').addEventListener('click', () => {
   btn.textContent = showAllDays ? '📅 Ver por día' : '📋 Ver todo';
   renderDays();
 });
+document.getElementById('filter-days-kind').querySelectorAll('.filter-chip').forEach(b=>b.addEventListener('click', ()=>{
+  document.querySelectorAll('#filter-days-kind .filter-chip').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); activeDaysKindFilter = b.dataset.kind; renderDays();
+}));
 
 // Dibuja los tramos entre tarjetas consecutivas. Se recalcula tras reordenar,
 // por eso vive aparte del render de las tarjetas.
@@ -1276,13 +1312,15 @@ function renderMap(){
     routeLayer = L.polyline(dayRoute.map(p => [p.lat, p.lon]), {
       color:'#171416', weight:2.5, opacity:.45, dashArray:'5 9', lineCap:'round'
     }).addTo(map);
-    let m = 0, mins = 0;
+    let m = 0, mins = 0, anyTransit = false;
     for (let i = 0; i < dayRoute.length - 1; i++){
       const leg = legBetween(dayRoute[i], dayRoute[i+1]);
-      if (leg){ m += leg.dist; mins += leg.mins; }
+      if (leg){ m += leg.dist; mins += leg.mins; if (leg.transit) anyTransit = true; }
     }
-    summaryEl.innerHTML = `<span class="route-chip">🚶 recorrido del día ~${mins} min · ${fmtDist(m)}</span>
-      <span class="route-note">estimado a pie</span>`;
+    // Si algún tramo del día es demasiado largo para ir a pie (ej. Woodbury
+    // Common, a 50 millas), el total "a pie" es engañoso — lo aclaramos.
+    summaryEl.innerHTML = `<span class="route-chip">${anyTransit ? '🚶🚇' : '🚶'} recorrido del día ~${mins} min · ${fmtDist(m)}</span>
+      <span class="route-note">${anyTransit ? 'estimado — incluye tramo que no es a pie' : 'estimado a pie'}</span>`;
   } else {
     summaryEl.innerHTML = '';
   }
@@ -1292,7 +1330,7 @@ function renderMap(){
     if (p.lat === null || p.lon === null) continue;
     if (activeDayFilter !== 'all' && p.day !== activeDayFilter) continue;
     const cat = CATEGORY_META[p.category] || CATEGORY_META.landmark;
-    if (activeKindFilter !== 'all' && cat.kind !== activeKindFilter) continue;
+    if (activeKindFilter !== 'all' && filterGroup(p.category) !== activeKindFilter) continue;
     const num = dayMode ? dayRoute.findIndex(x => x.id === p.id) + 1 : 0;
     const icon = L.divIcon({
       html:`<div class="pin ${p.is_done?'done':''}" style="background:${cat.color};">${cat.emoji}${
